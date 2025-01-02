@@ -24,6 +24,13 @@
 #include "driver/gpio.h"
 #include <arpa/inet.h>
 //-==================================
+#include "freertos/semphr.h"
+#include "esp_mac.h"
+    
+SemaphoreHandle_t sema_i2c1 = NULL;
+SemaphoreHandle_t sema_i2c2 = NULL;
+SemaphoreHandle_t sema_uart1 = NULL;
+SemaphoreHandle_t sema_uart2 = NULL;
 
 static const char *TAG = "i2c-tools";
 static uint32_t i2c_frequency = 100 * 1000;
@@ -35,6 +42,8 @@ static uint32_t i2c_frequency = 100 * 1000;
 
 int flag_CO2_sensor_OK = 0 ;
 int flag_IS_WEARABLE = 0 ;
+
+extern int fd_uart2 ;
 
 extern void hexdump3(char *title, void *pack, size_t size) ;
 extern void app_main_led_strip_ctrl(void *arg) ;//나중에 R/G/B/W로 변경하자
@@ -68,9 +77,30 @@ int CO2_ppm;
 int CO2_status;
 char CO2_Serial_num_str[50];
 char CO2_SW_ver_str[50];
+struct _CO2_ppm_packet 
+{
+	char cmd;
+	uint16_t ppm;
+	char status;
+	char cks;
+}__attribute__((packed));
+
+struct _CO2_sn_packet 
+{
+	char cmd;
+	uint16_t digit_5;
+	uint16_t digit_4;
+	uint16_t digit_3;
+	uint16_t digit_2;
+	uint16_t digit_1;
+	char cks;
+}__attribute__((packed));
+uint8_t my_mac_factory[20];
+char my_mac_str[32];
 
 void app_main_stella_uart1(void);
 void app_main_stella_uart2(void);
+int send_CM1106_data( struct _CO2_ppm_packet *data );
 
 static const char *JSON_TAG = "JSON";
 void test_json(void)
@@ -98,6 +128,22 @@ void test_json(void)
     cJSON_AddNumberToObject(root, "cores", chip_info.cores);
     cJSON_AddTrueToObject(root, "flag_true");
     cJSON_AddFalseToObject(root, "flag_false");
+
+	uint16_t	ttt_1 = htons(100);
+    cJSON_AddNumberToObject(root, "test_float_1", (float)(htons(ttt_1)/100.0));
+	uint16_t	ttt_2 = htons(103);
+    cJSON_AddNumberToObject(root, "test_float_2", (float)(htons(ttt_2)/100.0));
+	uint16_t	ttt_3 = htons(110);
+    cJSON_AddNumberToObject(root, "test_float_3", (float)(htons(ttt_3)/100.0));
+	char tmp_str[100];
+    sprintf(tmp_str, "%1.2f", (float)(htons(ttt_3)/100.0));
+    cJSON_AddNumberToObject( root, "test_float_4(110/100.0)", atof(tmp_str) );
+
+	uint16_t	ttt_4 = htons(100);
+    sprintf(tmp_str, "%1.2f", (float)(htons(ttt_4)/100.0));
+    cJSON_AddNumberToObject( root, "test_float_5(100/100.0)", atof(tmp_str) );
+
+
     //const char *my_json_string = cJSON_Print(root);
     char *my_json_string = cJSON_Print(root);
     ESP_LOGI(JSON_TAG, "my_json_string\n%s",my_json_string);
@@ -151,7 +197,7 @@ char calc_PM2008_cks(uint8_t *data, int len)
 	{
 		cks ^= data[i];
 	}
-	ESP_LOGW("cacl_PM2008_cks", "cs=0x%02x", (char) cks);
+	ESP_LOGW("calc_PM2008_cks", "cs=0x%02x", (char) cks);
 	return (char)cks;
 	
 }
@@ -163,35 +209,17 @@ char calc_CO2_cks(uint8_t *data, int len)
 		sum += data[i];
 	}
 	sum *= -1;
-	ESP_LOGW("cacl_CO2_cks", "cs=0x%02x", (char) sum);
+	ESP_LOGW("calc_CO2_cks", "cs=0x%02x", (char) sum);
 	return (char)sum;
 	
 }
 
 
-struct _CO2_ppm_packet 
-{
-	char cmd;
-	uint16_t ppm;
-	char status;
-	char cks;
-}__attribute__((packed));
-
-struct _CO2_sn_packet 
-{
-	char cmd;
-	uint16_t digit_5;
-	uint16_t digit_4;
-	uint16_t digit_3;
-	uint16_t digit_2;
-	uint16_t digit_1;
-	char cks;
-}__attribute__((packed));
-
-int get_CO2_ppm( int *ppm)
+//  int get_CO2_ppm( int *ppm)
+int get_CO2_ppm( struct _CO2_ppm_packet *CO2_ppm_packet)
 {
 	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
-	struct _CO2_ppm_packet CO2_ppm_packet;
+//  	struct _CO2_ppm_packet CO2_ppm_packet;
 	int len = sizeof(struct _CO2_ppm_packet);
 
 	int data_addr = 0x01; //cmd
@@ -210,7 +238,7 @@ int get_CO2_ppm( int *ppm)
 	int loop_count = 0;
 CO2_ppm_retry:
     esp_err_t ret = i2c_master_transmit_receive(dev_handle, (uint8_t*)&data_addr, 1, 
-	                                 (uint8_t *)&CO2_ppm_packet, len, I2C_TOOL_TIMEOUT_VALUE_MS);
+	                                 (uint8_t *)CO2_ppm_packet, len, I2C_TOOL_TIMEOUT_VALUE_MS);
     if (ret == ESP_OK) 
 	{
 		// 1. Power Off --> On
@@ -218,9 +246,9 @@ CO2_ppm_retry:
 		// 3. status 0x01 : preheating
 		// 4. status 0x00 : Normal
 		
-		hexdump3("CO2_ppm: i2cget -c 0x31 -r 0x02 -l 5", (char *)&CO2_ppm_packet, len);
+		hexdump3("CO2_ppm: i2cget -c 0x31 -r 0x02 -l 5", (char *)CO2_ppm_packet, len);
 
-		if ( CO2_ppm_packet.cmd != data_addr  )
+		if ( CO2_ppm_packet->cmd != data_addr  )
 		{
 
 			ESP_LOGW("shcho", "CM1106 reply old cmd: retry again( sleep 2): cmd 0x01");
@@ -236,10 +264,10 @@ CO2_ppm_retry:
 			goto CO2_ppm_retry;
 		}
 
-		if(   ( CO2_ppm_packet.cmd == 0x00) 
-		   && ( CO2_ppm_packet.ppm == 0  )
-		   && ( CO2_ppm_packet.status == 0 )
-		   && ( CO2_ppm_packet.cks == 0 ))
+		if(   ( CO2_ppm_packet->cmd == 0x00) 
+		   && ( CO2_ppm_packet->ppm == 0  )
+		   && ( CO2_ppm_packet->status == 0 )
+		   && ( CO2_ppm_packet->cks == 0 ))
 		{
 			CO2_status = -10;
 			ESP_LOGI("shcho", "CM1106 :Power On : All zero");
@@ -254,33 +282,33 @@ CO2_ppm_retry:
 
 			goto CO2_ppm_retry;
 		}
-		else if ( CO2_ppm_packet.status != 0 )
+		else if ( CO2_ppm_packet->status != 0 )
 		{
-			ESP_LOGI("shcho", "CM1106 :Power On : Status is no Normal ");
+			ESP_LOGI("shcho", "CM1106 :Power On : Status is not Normal ");
 			if( loop_count > 100  )
 			{
-				ESP_LOGE("shcho", "CM1106 :retry Time(Status is no Normal)");
-				return CO2_ppm_packet.status;
+				ESP_LOGE("shcho", "CM1106 :retry Time(Status is not Normal)");
+				return CO2_ppm_packet->status;
 			}
 
 			loop_count++;
         	vTaskDelay(2000 / portTICK_PERIOD_MS);
-			CO2_status = CO2_ppm_packet.status;
+			CO2_status = CO2_ppm_packet->status;
 			goto CO2_ppm_retry;
 		}
 
 
-		cks = calc_CO2_cks((uint8_t *)&CO2_ppm_packet, len);
-		if( (char)cks != (char)CO2_ppm_packet.cks )
+		cks = calc_CO2_cks((uint8_t *)CO2_ppm_packet, len);
+		if( (char)cks != (char)CO2_ppm_packet->cks )
 		{
-			ESP_LOGE("shcho", "get_CO2_ppm cks differ(0x%02x vs. 0x%02x)", (char)cks, CO2_ppm_packet.cks);
+			ESP_LOGE("shcho", "get_CO2_ppm cks differ(0x%02x vs. 0x%02x)", (char)cks, CO2_ppm_packet->cks);
 		}
-		if( CO2_ppm_packet.cmd != 0x01 )
+		if( CO2_ppm_packet->cmd != 0x01 )
 		{
-			ESP_LOGE("shcho", "get_CO2_ppm reply differ(%02x vs. %02x)", 0x01, CO2_ppm_packet.cmd);
+			ESP_LOGE("shcho", "get_CO2_ppm reply differ(%02x vs. %02x)", 0x01, CO2_ppm_packet->cmd);
 		}
-		*ppm = htons(CO2_ppm_packet.ppm);
-		ESP_LOGI("shcho", "CO2_ppm = %d ppm (status = %02x)", htons(CO2_ppm_packet.ppm), CO2_ppm_packet.status);
+
+		ESP_LOGI("shcho", "CO2_ppm = %d ppm (status = %02x)", htons(CO2_ppm_packet->ppm), CO2_ppm_packet->status);
 		ESP_LOGI("shcho", "		0: Normal(Preheating이 아니고 설명에 오류)");
 		ESP_LOGI("shcho", "		1: Preheating (Normal operation이 아니고 설명에 오류)");
 		ESP_LOGI("shcho", "		2: Operating trouble : Power가 Off->On될때");
@@ -594,7 +622,12 @@ static int do_get_CO2(int argc, char **argv)
 
 	ESP_LOGW("shcho", "get_CO2_ppm");
 	CO2_ppm = 0 ;
-	ret = get_CO2_ppm( &CO2_ppm );
+//  	ret = get_CO2_ppm( &CO2_ppm );
+//
+	struct _CO2_ppm_packet CO2_ppm_packet;
+	ret = get_CO2_ppm( &CO2_ppm_packet ) ;
+	CO2_ppm = htons(CO2_ppm_packet.ppm);
+
 	switch( ret  )
 	{
 		case -10 : // Power On
@@ -604,11 +637,15 @@ static int do_get_CO2(int argc, char **argv)
 			ESP_LOGI("shcho","CO2 Sensor(CM1106) : Preheating");
 			break;
 	}
-	ESP_LOGW("shcho", "      CO2 Sensor SW_Ver: %s", CO2_SW_ver_str);
-	ESP_LOGW("shcho", "       CO2 Serial_num  : %s", CO2_Serial_num_str);
-	ESP_LOGW("shcho", "-------------- CO2 ppm : %d ppm ------------------", CO2_ppm);
+	ESP_LOGW("shcho", "       CO2 Sensor SW_Ver       : %s", CO2_SW_ver_str);
+	ESP_LOGW("shcho", "       CO2 Sensor Serial_num   : %s", CO2_Serial_num_str);
+	ESP_LOGW("shcho", "-------------- CO2 ppm         : %d ppm ------------------", CO2_ppm);
 	ESP_LOGI("shcho", "-------------- CO2 ppm wait - every 20 secs ------------------");
 
+	if( CO2_ppm_packet.status == 0x00 ) 
+	{
+		send_CM1106_data( &CO2_ppm_packet ); 	
+	}
 
     return 0;
 }
@@ -675,21 +712,90 @@ struct _PM2008_set_mode
 	char cks ;
 }__attribute__((packed));
 
-int print_and_set_PM2008_data( struct _PM2008_data *data )
+int send_CM1106_data( struct _CO2_ppm_packet *data )
+{
+	if( data->status == 0 )
+	{
+	    ESP_LOGI(JSON_TAG, "Serialize.....CM1106");
+	    cJSON *root;
+    	root = cJSON_CreateObject();
+    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+    	cJSON_AddNumberToObject(root, "CO2_ppm",       htons(data->ppm) );
+    	cJSON_AddNumberToObject(root, "CO2_status",    data->status );
+    	cJSON_AddStringToObject(root, "CO2_Serial_num",CO2_Serial_num_str);
+    	cJSON_AddStringToObject(root, "CO2_SW_ver",    CO2_SW_ver_str);
+
+	    char *my_json_string = cJSON_Print(root);
+
+    	ESP_LOGI("CM1106", "my_json_string\n%s",my_json_string);
+
+		xSemaphoreTake(sema_uart2, portMAX_DELAY);
+		write(fd_uart2, my_json_string, strlen(my_json_string));
+		xSemaphoreGive(sema_uart2);
+
+    	cJSON_Delete(root);
+	}
+	else
+	{
+//  		"0 -->1 : Preheating;  --> 1이 아닌가?
+//  		1 -->0: Normal operation;  --? 0이 아닌가?
+//  		2: Operating trouble; 
+//  		3: Out of FS , 
+//  		5: Non calibrated
+//  		이상하네
+//  		CO2 measuring result: DF 0 ] 256 DF 1 ], Fixed output is 550ppm during preheating period
+//  		Status bit
+//  		DF 2 ]]: Preheating; 1: Normal operation; 2: Operating trouble; 3: Out of FS , 5: Non calibrated"
+		ESP_LOGE("CM1106         ", "0:Normal , 1 : Preheating, 2: Operation trouble, 3, Out of FS , 5 : Not Calibrated");
+		ESP_LOGE("CM1106         ", "status is not normal: 0x%02x", data->status);
+	}
+
+	return 1;
+}
+
+
+int send_PM2008_data( struct _PM2008_data *data )
 {
 	if( ( data->status == 0x80 ) // 
 	 || (  data->status == 0x02 )) // 
 	{
 		ESP_LOGI("status         ", "0x%02x( should be 0x80 at mode 4 / @ mode 3 :just read value",  data->status    );
 		ESP_LOGI("meas_mode      ", "0x%02x(I set to 3(continuous) // 4(timing measuring )",          htons(data->meas_mode) );
-		ESP_LOGI("meas_calib_coff", "0x%1.2f(I set to 100(1.0)",          (float)(htons(data->calib_coff)/100) );
+		ESP_LOGI("meas_calib_coff", "%1.2f(I set to 100(1.0)",          (float)(htons(data->calib_coff)/100.0) );
 		ESP_LOGI("pm1_0_grimm    ", "%d (ug/m^3(GRIMM)",                          htons(data->pm1_0_grimm) );
 		ESP_LOGI("pm2_5_grimm    ", "%d (ug/m^3(GRIMM)",                          htons(data->pm2_5_grimm) );
 		ESP_LOGI("pm10_0_grimm   ", "%d (ug/m^3(GRIMM)",                          htons(data->pm10_0_grimm ));
+
+	    ESP_LOGI(JSON_TAG, "Serialize.....RS9A");
+	    cJSON *root;
+    	root = cJSON_CreateObject();
+    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+    	cJSON_AddNumberToObject(root, "PM2008_Status",       data->status );
+    	cJSON_AddNumberToObject(root, "PM2008_Measure_mode", htons(data->meas_mode) );
+
+		char tmp_str[10];
+    	sprintf(tmp_str, "%1.2f", (float)(htons(data->calib_coff)/100.0));
+    	cJSON_AddNumberToObject( root, "PM2008_Cali_coff",  atof(tmp_str) );
+
+//      	cJSON_AddNumberToObject(root, "PM2008_Cali_coff", 0.7 ); // test
+    	cJSON_AddNumberToObject(root, "PM2008_PM1.0_GRIMM",  htons(data->pm1_0_grimm) );
+    	cJSON_AddNumberToObject(root, "PM2008_PM2.5_GRIMM",  htons(data->pm2_5_grimm) );
+    	cJSON_AddNumberToObject(root, "PM2008_PM10_GRIMM",   htons(data->pm10_0_grimm) );
+
+	    char *my_json_string = cJSON_Print(root);
+
+    	ESP_LOGI("PM2008", "my_json_string\n%s",my_json_string);
+
+		xSemaphoreTake(sema_uart2, portMAX_DELAY);
+		write(fd_uart2, my_json_string, strlen(my_json_string));
+		xSemaphoreGive(sema_uart2);
+
+    	cJSON_Delete(root);
+
 	}
 	else
 	{
-		ESP_LOGE("status         ", "status is not normal: 0x%02x", data->status);
+		ESP_LOGE("PM2008         ", "status is not normal: 0x%02x", data->status);
 	}
 
 	return 1;
@@ -814,7 +920,7 @@ PM2008_data_retry:
 		{
 			case 0x80: // Normal, Data is valid
 				ESP_LOGW("pm2008", "status is Normal");
-				print_and_set_PM2008_data( &PM2008_data );
+				send_PM2008_data( &PM2008_data );
 				flag_skip = 1 ;
 				break;
 			case 1: //
@@ -822,7 +928,7 @@ PM2008_data_retry:
 				break;
 			case 2: //
 				ESP_LOGW("pm2008", "status is Testing");
-				print_and_set_PM2008_data( &PM2008_data );
+				send_PM2008_data( &PM2008_data );
 				break;
 			default : //
 				ESP_LOGW("pm2008", "status is invalid");
@@ -853,17 +959,25 @@ PM2008_data_retry:
 
 void i2c_sensor_task(void *arg)
 {
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+
 	set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);
     vTaskDelay(5000 / portTICK_PERIOD_MS);
 	set_PM2008_mode(PM2008_CMD_SETUP_CONTINUOUS, 0xffff);
     vTaskDelay(2000 / portTICK_PERIOD_MS);
 //  	set_PM2008_mode(PM2008_CMD_SETUP_TIMING_MEASURE, 180);
 //      vTaskDelay(2000 / portTICK_PERIOD_MS);
+	xSemaphoreGive(sema_i2c1);
+	xSemaphoreGive(sema_i2c2);
 	
 	while(1)
 	{
-//  		do_get_CO2((int)NULL, (char**)NULL);
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+
+		do_get_CO2((int)NULL, (char**)NULL);
 		do_get_PM2008((int)NULL, (char**)NULL);
+		xSemaphoreGive(sema_i2c1);
 
        	vTaskDelay(10000 / portTICK_PERIOD_MS);
 	}
@@ -905,6 +1019,25 @@ int Uart_mux_setup(int direction)
 
 void app_main(void)
 {
+
+	ESP_ERROR_CHECK(esp_read_mac(my_mac_factory, ESP_MAC_EFUSE_FACTORY ));
+	hexdump3("esp_read_mac(ESP_MAC_EFUSE_FACTORY)", my_mac_factory, sizeof(my_mac_factory));
+
+	memset(my_mac_str, 0, sizeof(my_mac_str));
+	snprintf(my_mac_str, sizeof(my_mac_str),"%02X%02X%02X_%02X%02X%02X", MAC2STR(my_mac_factory));
+	ESP_LOGW("system", "my mac(factory) : %s\n", my_mac_str);
+
+
+	sema_i2c1 = xSemaphoreCreateBinary();
+	sema_i2c2 = xSemaphoreCreateBinary();
+	sema_uart1 = xSemaphoreCreateBinary();
+	sema_uart2 = xSemaphoreCreateBinary();
+
+	xSemaphoreGive(sema_i2c1);
+	xSemaphoreGive(sema_i2c2);
+	xSemaphoreGive(sema_uart1);
+	xSemaphoreGive(sema_uart2);
+
 	// 0. ---- LED ctrl
     xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);
 
@@ -954,12 +1087,13 @@ void app_main(void)
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c2, &tool_bus_handle_i2c2));
 
+//  for UART2 Debugging : CM4와 연결된 ttyAMA3이 Enable되면 ESP32 Program을 할 수 없음 / monitoring은 됨
 //  	I2C thread
 //  	do_get_CO2((int)NULL, (char**)NULL);
     xTaskCreate(i2c_sensor_task, "i2c_sensor", 4 * 1024, NULL, 5, NULL);
 
 
-//  	app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A
+	app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A
 	app_main_stella_uart2(); // send to CM4
 
 	// Below is Console
