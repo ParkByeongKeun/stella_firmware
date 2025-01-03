@@ -45,6 +45,7 @@ extern char my_mac_str[32];
 
 extern int flag_IS_WEARABLE; 
 extern void hexdump3(char *title, void *pack, size_t size) ;
+extern int send_to_server(char *payload, int len);
 int fd_uart2 = -1 ;
 char buf_uart2[1024];
 
@@ -268,9 +269,19 @@ int extract_info_RS9A_send(char *ver_str, char *sn_str, char *value_str)
 
 	if( strncasecmp(RS9A_format.RS9A_Status, "NORMAL", strlen("NORMAL") ) == STR_MATCH ) 
 	{
-		xSemaphoreTake(sema_uart2, portMAX_DELAY);
-		write(fd_uart2, my_json_string, strlen(my_json_string));
-		xSemaphoreGive(sema_uart2);
+		
+		if( flag_IS_WEARABLE == 0 ) //Static Main
+		{
+			xSemaphoreTake(sema_uart2, portMAX_DELAY);
+			write(fd_uart2, my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_uart2);
+		}
+		else // Wearable Main
+		{
+			xSemaphoreTake(sema_uart2, portMAX_DELAY);
+			send_to_server(my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_uart2);
+		}
 	}
 
     cJSON_Delete(root);

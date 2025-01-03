@@ -26,11 +26,22 @@
 //-==================================
 #include "freertos/semphr.h"
 #include "esp_mac.h"
+
+
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "esp_netif.h"
+#include "protocol_examples_common.h"
+#include "esp_event.h"
+
+#define STORAGE_NAMESPACE "storage"
+
     
 SemaphoreHandle_t sema_i2c1 = NULL;
 SemaphoreHandle_t sema_i2c2 = NULL;
 SemaphoreHandle_t sema_uart1 = NULL;
 SemaphoreHandle_t sema_uart2 = NULL;
+SemaphoreHandle_t sema_tcp = NULL;
 
 static const char *TAG = "i2c-tools";
 static uint32_t i2c_frequency = 100 * 1000;
@@ -47,6 +58,8 @@ extern int fd_uart2 ;
 
 extern void hexdump3(char *title, void *pack, size_t size) ;
 extern void app_main_led_strip_ctrl(void *arg) ;//나중에 R/G/B/W로 변경하자
+extern void tcp_client_task(void* arg);
+extern int send_to_server(char *payload, int len);
 
 //  //  static gpio_num_t i2c_gpio_sda = CONFIG_EXAMPLE_I2C_MASTER_SDA;
 //  //  static gpio_num_t i2c_gpio_scl = CONFIG_EXAMPLE_I2C_MASTER_SCL;
@@ -102,7 +115,13 @@ void app_main_stella_uart1(void);
 void app_main_stella_uart2(void);
 int send_CM1106_data( struct _CO2_ppm_packet *data );
 
+
+
+
+
 static const char *JSON_TAG = "JSON";
+
+
 void test_json(void)
 {
     //  I (1756) JSON: Serialize.....
@@ -172,6 +191,101 @@ void test_json(void)
     // Buffers returned by cJSON_Print must be freed by the caller.
     // Please use the proper API (cJSON_free) rather than directly calling stdlib free.
     cJSON_free(my_json_string);
+}
+
+esp_err_t ijoon_get_nvs_str(uint8_t *key, uint8_t *value)
+{
+    nvs_handle_t nvs_handle;
+    size_t len= 0 ;
+
+    esp_err_t  err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("\n", "nvs_open(%s,,,) Failed(%s)", STORAGE_NAMESPACE, esp_err_to_name(err));
+    }
+
+    char *blob ;
+    if( (err = nvs_get_str(nvs_handle, (char *)key,   NULL, &len)) == ESP_OK )
+    {
+        blob = (char *)malloc(len);
+        if( (err = nvs_get_str(nvs_handle, (char *)key, blob, &len)) == ESP_OK )
+        {
+//              ESP_LOGI("result nvs_get_str", "nvs_get_str() len=%d, err=%d(%s)(actually read): OK", len, err, esp_err_to_name(err));
+//              hexdump3((char *)key, blob, len);
+
+            memcpy((char *)value, blob, len);
+        }
+        free(blob);
+    }
+    nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+
+    return err;
+
+}
+
+
+esp_err_t  ijoon_set_nvs_str(uint8_t *key, uint8_t *value)
+{
+    nvs_handle_t nvs_handle;
+//      size_t len= 0 ;
+
+    esp_err_t  err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("\n", "nvs_open(%s,,,) Failed(%s)", STORAGE_NAMESPACE, esp_err_to_name(err));
+//          return err;
+    }
+
+    err = nvs_set_str(nvs_handle, (char *)key, (char *)value);
+
+    nvs_commit(nvs_handle);
+    nvs_close(nvs_handle);
+
+    return  err;
+}
+
+static esp_err_t do_get_nvs_str(int argc, char **argv)
+{
+    char str[200];
+	memset(str, 0, sizeof(str));
+    ijoon_get_nvs_str((uint8_t *)argv[1], (uint8_t *)str);
+    hexdump3( argv[1], str, sizeof(str));
+    return 0;
+}
+
+void register_nvs_get_str(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "get_nvs_str",
+        .help = "get_nvs_str key ",
+        .hint = NULL,
+        .func = do_get_nvs_str,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+}
+
+static esp_err_t do_set_nvs_str(int argc, char **argv)
+{
+    char str[200];
+
+	memset(str, 0, sizeof(str));
+    ijoon_set_nvs_str((uint8_t *)argv[1], (uint8_t *)argv[2]);
+
+    ijoon_get_nvs_str((uint8_t *)argv[1], (uint8_t *)str);
+    hexdump3( argv[1] , str, sizeof(str));
+    return 0;
+}
+
+void register_nvs_set_str(void)
+{
+    const esp_console_cmd_t cmd = {
+        .command = "set_nvs_str",
+        .help = "set_nvs_str key value",
+        .hint = NULL,
+        .func = do_set_nvs_str,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
 }
 
 
@@ -728,11 +842,18 @@ int send_CM1106_data( struct _CO2_ppm_packet *data )
 	    char *my_json_string = cJSON_Print(root);
 
     	ESP_LOGI("CM1106", "my_json_string\n%s",my_json_string);
-
-		xSemaphoreTake(sema_uart2, portMAX_DELAY);
-		write(fd_uart2, my_json_string, strlen(my_json_string));
-		xSemaphoreGive(sema_uart2);
-
+		if( flag_IS_WEARABLE == 0 ) //Static Main
+		{
+			xSemaphoreTake(sema_uart2, portMAX_DELAY);
+			write(fd_uart2, my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_uart2);
+		}
+		else // Wearable Main
+		{
+			xSemaphoreTake(sema_tcp, portMAX_DELAY);
+			send_to_server(my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_tcp);
+		}
     	cJSON_Delete(root);
 	}
 	else
@@ -786,9 +907,18 @@ int send_PM2008_data( struct _PM2008_data *data )
 
     	ESP_LOGI("PM2008", "my_json_string\n%s",my_json_string);
 
-		xSemaphoreTake(sema_uart2, portMAX_DELAY);
-		write(fd_uart2, my_json_string, strlen(my_json_string));
-		xSemaphoreGive(sema_uart2);
+		if( flag_IS_WEARABLE == 0 ) //Static Main
+		{
+			xSemaphoreTake(sema_uart2, portMAX_DELAY);
+			write(fd_uart2, my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_uart2);
+		}
+		else
+		{
+			xSemaphoreTake(sema_tcp, portMAX_DELAY);
+			send_to_server(my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_tcp);
+		}
 
     	cJSON_Delete(root);
 
@@ -992,6 +1122,10 @@ void register_stella_cmd(void)
 	register_view_tasks();
 	register_restart_cmd();
 	register_get_CO2();
+	
+	register_nvs_get_str();
+	register_nvs_set_str();
+
 }
 
 int Uart_mux_setup(int direction)
@@ -1032,11 +1166,13 @@ void app_main(void)
 	sema_i2c2 = xSemaphoreCreateBinary();
 	sema_uart1 = xSemaphoreCreateBinary();
 	sema_uart2 = xSemaphoreCreateBinary();
+	sema_tcp = xSemaphoreCreateBinary();
 
 	xSemaphoreGive(sema_i2c1);
 	xSemaphoreGive(sema_i2c2);
 	xSemaphoreGive(sema_uart1);
 	xSemaphoreGive(sema_uart2);
+	xSemaphoreGive(sema_tcp);
 
 	// 0. ---- LED ctrl
     xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);
@@ -1056,6 +1192,18 @@ void app_main(void)
     {
         flag_IS_WEARABLE = 1 ;
         ESP_LOGW("shcho", "This Board is Wearable(%d): No UART_MUX(UART1) / No CM4 Communication(UART2)", flag_IS_WEARABLE);
+
+	    ESP_ERROR_CHECK(nvs_flash_init());
+	    ESP_ERROR_CHECK(esp_netif_init());
+	    ESP_ERROR_CHECK(esp_event_loop_create_default());
+	
+	    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
+	     * Read "Establishing Wi-Fi or Ethernet Connection" section in
+	     * examples/protocols/README.md for more information about this function.
+	     */
+	    ESP_ERROR_CHECK(example_connect());
+//      	tcp_client(); // org
+//      	xTaskCreate(tcp_client_task, "tcp_client", 4 * 1024, NULL, 5, NULL); : OK shcho
     }
     else
     {
@@ -1093,8 +1241,11 @@ void app_main(void)
     xTaskCreate(i2c_sensor_task, "i2c_sensor", 4 * 1024, NULL, 5, NULL);
 
 
-	app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A
-	app_main_stella_uart2(); // send to CM4
+	if( flag_IS_WEARABLE == 0 ) //Static Main
+	{
+		app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A
+		app_main_stella_uart2(); // send to CM4
+	}
 
 	// Below is Console
     esp_console_repl_t *repl = NULL;

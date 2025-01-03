@@ -21,10 +21,17 @@ dependencies:
     source:
       type: idf
     version: 5.3.2
+  protocol_examples_common:
+    dependencies: []
+    source:
+      path: C:\Espressif\frameworks\esp-idf-v5.3.2\examples\common_components\protocol_examples_common
+      type: local
+    version: '*'
 direct_dependencies:
 - cmd_nvs
 - cmd_system
 - cmd_wifi
-manifest_hash: 6d54c5e451ccd396bf1c0136ca6744e4f31c8b91775ca1b87d7790cd9f317199
+- protocol_examples_common
+manifest_hash: ac414a73511ff920e675576d438eb1d385cdc0848ab8f7ec5bc7eea12aa9b5ee
 target: esp32s3
 version: 2.0.0
