@@ -1,0 +1,1 @@
+#define WEARABLE_USE_W5500 (1) 

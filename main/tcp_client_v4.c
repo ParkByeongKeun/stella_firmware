@@ -19,6 +19,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "stella_global.h"
+
 #if defined(CONFIG_EXAMPLE_IPV4)
 #define HOST_IP_ADDR CONFIG_EXAMPLE_IPV4_ADDR
 #elif defined(CONFIG_EXAMPLE_SOCKET_IP_INPUT_STDIN)
@@ -78,6 +80,16 @@ int recv_using_select( int sock, char *rx_buffer, int len )
 }
 
 //  void tcp_client(void)
+#if (WEARABLE_USE_W5500 == 0 )
+//  #error 111111111111111111111111111111111111111
+int send_to_server(char *payload, int len)
+{
+	// test : just return
+	return 1;
+	
+}
+#else
+//  #error 222222222222222222222222222222222222222
 int send_to_server(char *payload, int len)
 {
     char rx_buffer[1024];
@@ -177,6 +189,7 @@ int send_to_server(char *payload, int len)
 
 	return ret;
 }
+#endif
 
 //  void tcp_client(void)
 void tcp_client_task(void* arg)

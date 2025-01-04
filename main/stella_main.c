@@ -34,7 +34,11 @@
 #include "protocol_examples_common.h"
 #include "esp_event.h"
 
+#include "stella_global.h"
+
 #define STORAGE_NAMESPACE "storage"
+
+// During Cert(PM2008, CM1106, RS9A) : Sensor Connection Used for W5500
 
     
 SemaphoreHandle_t sema_i2c1 = NULL;
@@ -45,6 +49,7 @@ SemaphoreHandle_t sema_tcp = NULL;
 
 static const char *TAG = "i2c-tools";
 static uint32_t i2c_frequency = 100 * 1000;
+//  static uint32_t i2c_frequency = 100 * 1000;
 #define I2C_TOOL_TIMEOUT_VALUE_MS (50)
 
 #define GPIO_INPUT_IO_0     38
@@ -54,12 +59,16 @@ static uint32_t i2c_frequency = 100 * 1000;
 int flag_CO2_sensor_OK = 0 ;
 int flag_IS_WEARABLE = 0 ;
 
+//  i2c_master_dev_handle_t dev_handle_i2c1; // device_address를 그때그때 바꾸려고 했는데
+//  											Error  ...add_device() --> ...rm_device()를 해야 한다.
+
 extern int fd_uart2 ;
 
 extern void hexdump3(char *title, void *pack, size_t size) ;
 extern void app_main_led_strip_ctrl(void *arg) ;//나중에 R/G/B/W로 변경하자
 extern void tcp_client_task(void* arg);
 extern int send_to_server(char *payload, int len);
+extern void app_main_task_oled(void *arg);
 
 //  //  static gpio_num_t i2c_gpio_sda = CONFIG_EXAMPLE_I2C_MASTER_SDA;
 //  //  static gpio_num_t i2c_gpio_scl = CONFIG_EXAMPLE_I2C_MASTER_SCL;
@@ -78,7 +87,7 @@ static i2c_port_t i2c_port_i2c2 = I2C_NUM_1;
 #define PM2008_I2C_DEV_ADDR	        0x28 // I2C1
 #define RTC_I2C_DEV_ADDR	        0x32 // I2C1
 #define LIGHT_SENSOR_I2C_DEV_ADDR	0x29 // I2C1
-#define FAN_SENSOR_I2C_DEV_ADDR	    0x2F // I2C1
+#define FAN_CTRL_I2C_DEV_ADDR	    0x2F // I2C1
 
 #define ZMOD4450_I2C_DEV_ADDR	    0x32 // I2C2
 #define SHT40_SENSOR_I2C_DEV_ADDR	0x44 // I2C2
@@ -332,8 +341,9 @@ char calc_CO2_cks(uint8_t *data, int len)
 //  int get_CO2_ppm( int *ppm)
 int get_CO2_ppm( struct _CO2_ppm_packet *CO2_ppm_packet)
 {
+//  	static int Is_1st = 1 ; 
+//  	static i2c_master_dev_handle_t dev_handle_i2c1;
 	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
-//  	struct _CO2_ppm_packet CO2_ppm_packet;
 	int len = sizeof(struct _CO2_ppm_packet);
 
 	int data_addr = 0x01; //cmd
@@ -344,14 +354,15 @@ int get_CO2_ppm( struct _CO2_ppm_packet *CO2_ppm_packet)
         .device_address = chip_addr,
     };
 
-    i2c_master_dev_handle_t dev_handle;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK) {
+    i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
         return 1;
     }
 
+//  	dev_handle_i2c1->device_address = CM1106_CO2_I2C_DEV_ADDR; // Error
 	int loop_count = 0;
 CO2_ppm_retry:
-    esp_err_t ret = i2c_master_transmit_receive(dev_handle, (uint8_t*)&data_addr, 1, 
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&data_addr, 1, 
 	                                 (uint8_t *)CO2_ppm_packet, len, I2C_TOOL_TIMEOUT_VALUE_MS);
     if (ret == ESP_OK) 
 	{
@@ -435,7 +446,7 @@ CO2_ppm_retry:
         ESP_LOGW(TAG, "Read failed");
     }
 //      free(data);
-    if (i2c_master_bus_rm_device(dev_handle) != ESP_OK) {
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
         return 1;
     }
     return 0;
@@ -443,6 +454,8 @@ CO2_ppm_retry:
 
 int get_CO2_SW_ver(char *sw_ver)
 {
+//  	static int Is_1st = 1 ; 
+//  	static i2c_master_dev_handle_t dev_handle_i2c1;
 	char tmp_str[100];
 	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
 	int len = 13 ;// 고정
@@ -455,15 +468,16 @@ int get_CO2_SW_ver(char *sw_ver)
         .device_address = chip_addr,
     };
 
-    i2c_master_dev_handle_t dev_handle;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK) {
+    i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
         return 1;
     }
 
 	int loop_count = 0 ;
 CO2_get_SW_ver_retry :
 	memset(tmp_str, 0, sizeof(tmp_str));
-    esp_err_t ret = i2c_master_transmit_receive(dev_handle, (uint8_t*)&data_addr, 1, 
+//  	dev_handle_i2c1->device_address = CM1106_CO2_I2C_DEV_ADDR; // Error
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&data_addr, 1, 
 	                                 (uint8_t *)tmp_str, len, I2C_TOOL_TIMEOUT_VALUE_MS);
     if (ret == ESP_OK) 
 	{
@@ -502,7 +516,7 @@ CO2_get_SW_ver_retry :
         ESP_LOGW(TAG, "Read failed");
     }
 //      free(data);
-    if (i2c_master_bus_rm_device(dev_handle) != ESP_OK) {
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
         return -20;
     }
 	return 0;
@@ -511,6 +525,7 @@ CO2_get_SW_ver_retry :
 
 int get_CO2_Serial_num(char *sn)
 {
+//  	static i2c_master_dev_handle_t dev_handle_i2c1;
 //  	char tmp_str[100];
 	struct _CO2_sn_packet CO2_sn_packet;
 	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
@@ -524,15 +539,16 @@ int get_CO2_Serial_num(char *sn)
         .device_address = chip_addr,
     };
 
-    i2c_master_dev_handle_t dev_handle;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK) {
+    i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
         return 1;
     }
 
 	int loop_count = 0 ;
 CO2_get_Serial_num_retry :
 	memset((char *)&CO2_sn_packet, 0, sizeof(CO2_sn_packet));
-    esp_err_t ret = i2c_master_transmit_receive(dev_handle, (uint8_t*)&data_addr, 1, 
+//  	dev_handle_i2c1->device_address = CM1106_CO2_I2C_DEV_ADDR; // Error
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&data_addr, 1, 
 	                                 (uint8_t *)&CO2_sn_packet, len, I2C_TOOL_TIMEOUT_VALUE_MS);
     if (ret == ESP_OK) 
 	{
@@ -574,7 +590,7 @@ CO2_get_Serial_num_retry :
         ESP_LOGW(TAG, "Read failed");
     }
 //      free(data);
-    if (i2c_master_bus_rm_device(dev_handle) != ESP_OK) {
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
         return -20;
     }
 	return 0;
@@ -713,11 +729,67 @@ static int  register_restart_cmd()
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
     return 0;
 }
+static int do_esp32_fan_ctrl(int argc, char **argv) 
+{
+	int chip_addr = FAN_CTRL_I2C_DEV_ADDR;
+
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = i2c_frequency,
+        .device_address = chip_addr,
+    };
+
+    i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) 
+	{
+        return 1;
+    }
+
+	char val = ( atoi(argv[1]) * 255 ) / 100 ; 
+	ESP_LOGW("fan value", "%s(%) = %02x", (char*)argv[1], (int)val );
+
+	char data[3] ;
+	data[0] = 0x2f;
+	data[1] = 0x30;
+	data[2] = val;
+
+	hexdump3("FAN Duty Change", data, sizeof(data));
+
+
+    esp_err_t ret = i2c_master_transmit(dev_handle_i2c1, 
+	                                    (uint8_t *)data, 
+										sizeof(data), 
+										I2C_TOOL_TIMEOUT_VALUE_MS);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Write OK : FAN_Ctrl");
+    } else if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "Bus is busy: FAN_Ctrl");
+    } else {
+        ESP_LOGW(TAG, "Write Failed: FAN_Ctrl");
+    }
+//      free(data);
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+        return -20;
+    }
+	return 0;
+}
+
+static int  register_fan_ctrl()
+{
+    const esp_console_cmd_t cmd = {
+        .command = "fan",
+        .help = "fan control ( 0 ~ 100 %)",
+        .hint = NULL,
+        .func = do_esp32_fan_ctrl,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+    return 0;
+}
 
 static int do_get_CO2(int argc, char **argv) 
 {
 	int ret = 0;
 
+	// 1. CO2_SW_ver ==========================================
 	ESP_LOGW("shcho", " get_CO2_SW_ver");
 	memset(CO2_SW_ver_str, 0, sizeof(CO2_SW_ver_str));
 	ret = get_CO2_SW_ver( CO2_SW_ver_str );
@@ -726,6 +798,7 @@ static int do_get_CO2(int argc, char **argv)
 		ESP_LOGI("shcho", "CO2 Sensor SW_Ver=%s", CO2_SW_ver_str);
 	}
 
+	// 2. CO2_Serial_num  ==========================================
 	ESP_LOGW("shcho", " get_CO2_Serial_num");
 	memset(CO2_Serial_num_str, 0, sizeof(CO2_Serial_num_str));
 	ret = get_CO2_Serial_num( CO2_Serial_num_str );
@@ -734,6 +807,7 @@ static int do_get_CO2(int argc, char **argv)
 		ESP_LOGI("shcho", "CO2 Serial_num=%s", CO2_Serial_num_str);
 	}
 
+	// 3. CO2_ppm  ==========================================
 	ESP_LOGW("shcho", "get_CO2_ppm");
 	CO2_ppm = 0 ;
 //  	ret = get_CO2_ppm( &CO2_ppm );
@@ -742,6 +816,10 @@ static int do_get_CO2(int argc, char **argv)
 	ret = get_CO2_ppm( &CO2_ppm_packet ) ;
 	CO2_ppm = htons(CO2_ppm_packet.ppm);
 
+
+
+
+	//-------------------------------------------------------------------------
 	switch( ret  )
 	{
 		case -10 : // Power On
@@ -760,6 +838,7 @@ static int do_get_CO2(int argc, char **argv)
 	{
 		send_CM1106_data( &CO2_ppm_packet ); 	
 	}
+	//-------------------------------------------------------------------------
 
     return 0;
 }
@@ -939,6 +1018,7 @@ static int set_PM2008_mode(int cmd, uint16_t value)
 //  	4 180       // timing measurement
 //  	5 ??        // dunamic measurement
 //  	6 100       // calibration Coff
+
 	int chip_addr = PM2008_I2C_DEV_ADDR;
 
 //  	struct _PM2008_data PM2008_data;
@@ -952,8 +1032,8 @@ static int set_PM2008_mode(int cmd, uint16_t value)
         .device_address = chip_addr,
     };
 
-    i2c_master_dev_handle_t dev_handle;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK) {
+    i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
         return 1;
     }
 
@@ -969,7 +1049,8 @@ static int set_PM2008_mode(int cmd, uint16_t value)
 
 
 //  PM2008_data_retry:
-    esp_err_t ret = i2c_master_transmit(dev_handle, (uint8_t *)&PM2008_set_mode, sizeof(PM2008_set_mode), I2C_TOOL_TIMEOUT_VALUE_MS);
+//  	dev_handle_i2c1->device_address = PM2008_I2C_DEV_ADDR;
+    esp_err_t ret = i2c_master_transmit(dev_handle_i2c1, (uint8_t *)&PM2008_set_mode, sizeof(PM2008_set_mode), I2C_TOOL_TIMEOUT_VALUE_MS);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Write OK");
     } else if (ret == ESP_ERR_TIMEOUT) {
@@ -978,7 +1059,7 @@ static int set_PM2008_mode(int cmd, uint16_t value)
         ESP_LOGW(TAG, "Write Failed");
     }
 
-    if (i2c_master_bus_rm_device(dev_handle) != ESP_OK) {
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
         return 1;
     }
     return 0;
@@ -989,6 +1070,8 @@ static int set_PM2008_mode(int cmd, uint16_t value)
 
 static int do_get_PM2008(int argc, char **argv) 
 {
+//  	static int Is_1st = 1 ; 
+//  	static i2c_master_dev_handle_t dev_handle_i2c1;
 	int chip_addr = PM2008_I2C_DEV_ADDR;
 
 	struct _PM2008_data PM2008_data;
@@ -1005,14 +1088,15 @@ static int do_get_PM2008(int argc, char **argv)
         .device_address = chip_addr,
     };
 
-    i2c_master_dev_handle_t dev_handle;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK) {
-        return 1;
-    }
+	i2c_master_dev_handle_t dev_handle_i2c1;
+	if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
+		return 1;
+	}
 
 	int loop_count = 0;
 PM2008_data_retry:
-    esp_err_t ret = i2c_master_transmit_receive(dev_handle, (uint8_t*)&data_addr, 1, 
+//  	dev_handle_i2c1->device_address = PM2008_I2C_DEV_ADDR;
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&data_addr, 1, 
 	                                 (uint8_t *)&PM2008_data, len, I2C_TOOL_TIMEOUT_VALUE_MS);
     if (ret == ESP_OK) 
 	{
@@ -1079,7 +1163,7 @@ PM2008_data_retry:
         ESP_LOGW(TAG, "Read failed");
     }
 //      free(data);
-    if (i2c_master_bus_rm_device(dev_handle) != ESP_OK) {
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
         return 1;
     }
     return 0;
@@ -1100,12 +1184,20 @@ void i2c_sensor_task(void *arg)
 //      vTaskDelay(2000 / portTICK_PERIOD_MS);
 	xSemaphoreGive(sema_i2c1);
 	xSemaphoreGive(sema_i2c2);
+
+
+
+
 	
 	while(1)
 	{
 		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-
 		do_get_CO2((int)NULL, (char**)NULL);
+		xSemaphoreGive(sema_i2c1);
+
+       	vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 		do_get_PM2008((int)NULL, (char**)NULL);
 		xSemaphoreGive(sema_i2c1);
 
@@ -1125,6 +1217,7 @@ void register_stella_cmd(void)
 	
 	register_nvs_get_str();
 	register_nvs_set_str();
+	register_fan_ctrl();
 
 }
 
@@ -1188,12 +1281,15 @@ void app_main(void)
 
     ESP_LOGW("shcho", "val_mux_A0=%d / val_mux_A1=%d", val_mux_A1, val_mux_A0);
 
+	ESP_ERROR_CHECK(nvs_flash_init());
+
     if( val_mux_A0 == 0 && val_mux_A1 == 0 )
     {
         flag_IS_WEARABLE = 1 ;
         ESP_LOGW("shcho", "This Board is Wearable(%d): No UART_MUX(UART1) / No CM4 Communication(UART2)", flag_IS_WEARABLE);
 
-	    ESP_ERROR_CHECK(nvs_flash_init());
+
+	#if ( WEARABLE_USE_W5500 == 1 ) 
 	    ESP_ERROR_CHECK(esp_netif_init());
 	    ESP_ERROR_CHECK(esp_event_loop_create_default());
 	
@@ -1202,8 +1298,10 @@ void app_main(void)
 	     * examples/protocols/README.md for more information about this function.
 	     */
 	    ESP_ERROR_CHECK(example_connect());
-//      	tcp_client(); // org
-//      	xTaskCreate(tcp_client_task, "tcp_client", 4 * 1024, NULL, 5, NULL); : OK shcho
+//      	tcp_client(); // org : OK shcho
+//      	xTaskCreate(tcp_client_task, "tcp_client", 4 * 1024, NULL, 5, NULL); // OK shcho // It is Just Test
+	#endif
+
     }
     else
     {
@@ -1212,6 +1310,14 @@ void app_main(void)
         Uart_mux_setup(GPIO_MODE_OUTPUT);
     }
 	//--------------------------------------------------------------
+	
+    if ( flag_IS_WEARABLE == 1 )
+	{
+//  	    xTaskCreate(app_main_task_oled, "oled", 4 * 1024, NULL, 5, NULL);
+		// I2C를 사용하고 완전히 삭제한다.
+		app_main_task_oled(NULL);
+       	vTaskDelay(1000 / portTICK_PERIOD_MS);
+	}
 
     i2c_master_bus_config_t i2c_bus_config_i2c1 = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
@@ -1235,15 +1341,30 @@ void app_main(void)
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c2, &tool_bus_handle_i2c2));
 
+//      i2c_device_config_t i2c_dev_conf = {
+//          .scl_speed_hz = i2c_frequency,
+//          .device_address = CM1106_CO2_I2C_DEV_ADDR, //chip_addr,
+//      };
+//  	ESP_ERROR_CHECK(i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1));
+//  
+//  	i2c_dev_conf.scl_speed_hz   = i2c_frequency ; 
+//  	i2c_dev_conf.device_address = PM2008_I2C_DEV_ADDR ; 
+//  	//맨 마직막 device_address로만 설정된다. // 그래서 그때그때 다시 설정해야 한다.
+//  	ESP_ERROR_CHECK(i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1));
+
 //  for UART2 Debugging : CM4와 연결된 ttyAMA3이 Enable되면 ESP32 Program을 할 수 없음 / monitoring은 됨
 //  	I2C thread
 //  	do_get_CO2((int)NULL, (char**)NULL);
     xTaskCreate(i2c_sensor_task, "i2c_sensor", 4 * 1024, NULL, 5, NULL);
 
 
+
+	#if (WEARABLE_USE_W5500 == 0 )
+	app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A / and ZE08
+	#endif
+
 	if( flag_IS_WEARABLE == 0 ) //Static Main
 	{
-		app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A
 		app_main_stella_uart2(); // send to CM4
 	}
 
@@ -1270,28 +1391,6 @@ void app_main(void)
     esp_console_dev_usb_serial_jtag_config_t usbjtag_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_console_new_repl_usb_serial_jtag(&usbjtag_config, &repl_config, &repl));
 #endif
-
-//      i2c_master_bus_config_t i2c_bus_config_i2c1 = {
-//          .clk_source = I2C_CLK_SRC_DEFAULT,
-//          .i2c_port = i2c_port_i2c1,
-//          .scl_io_num = 6 , //i2c_gpio_scl,
-//          .sda_io_num = 7,  //i2c_gpio_sda,
-//          .glitch_ignore_cnt = 7,
-//          .flags.enable_internal_pullup = true,
-//      };
-//  
-//      i2c_master_bus_config_t i2c_bus_config_i2c2 = {
-//          .clk_source = I2C_CLK_SRC_DEFAULT,
-//          .i2c_port = i2c_port_i2c2,
-//          .scl_io_num = 15 , //i2c_gpio_scl,
-//          .sda_io_num = 16,  //i2c_gpio_sda,
-//          .glitch_ignore_cnt = 7,
-//          .flags.enable_internal_pullup = true,
-//      };
-//  
-//  //  	ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle));
-//      ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
-//      ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c2, &tool_bus_handle_i2c2));
 
     register_i2ctools();
 	register_stella_cmd();

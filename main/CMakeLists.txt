@@ -11,6 +11,7 @@ idf_component_register(SRCS "stella_main.c"
 							"led_strip_ctrl.c"
 							"led_strip_encoder.c"
 							"tcp_client_v4.c"
+							"oled_ssd1306.c"
                        INCLUDE_DIRS "."
 					   REQUIRES ${requires})
 
