@@ -23,6 +23,7 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include <arpa/inet.h>
+#include <math.h>
 //-==================================
 #include "freertos/semphr.h"
 #include "esp_mac.h"
@@ -729,6 +730,77 @@ static int  register_restart_cmd()
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
     return 0;
 }
+
+int do_fan_report(void)
+{
+	// FAN Controller Resigter Read
+	int chip_addr = FAN_CTRL_I2C_DEV_ADDR;
+
+	int len = 1 ;
+	//  i2cget -c 0x2f -r 0x30 -l 1
+	int data_addr = 0x30; 
+
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = i2c_frequency,
+        .device_address = chip_addr,
+    };
+
+	i2c_master_dev_handle_t dev_handle_i2c1;
+	if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
+		return 1;
+	}
+
+	char val;
+	char *mode = "PWM Duty";
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&data_addr, 1, 
+	                                 (uint8_t *)&val, len, I2C_TOOL_TIMEOUT_VALUE_MS);
+//  	float val_percent = floorf((( val * 100.0 )+0.5) / 255.0) ; 
+	float val_percent = ceil( ( val * 100.0 ) / 255.0) ; 
+	ESP_LOGI("FAN", "fan val=%02x(percent = %3f)\n", val, val_percent);
+
+    if (ret == ESP_OK) 
+	{
+	    ESP_LOGI(JSON_TAG, "Serialize.....Fan");
+	    cJSON *root;
+	   	root = cJSON_CreateObject();
+	   	cJSON_AddStringToObject(root, "FAN_Mode",   mode);
+	   	cJSON_AddNumberToObject(root, "FAN_PWM_percent",  val_percent);
+	
+	    char *my_json_string = cJSON_Print(root);
+	
+	   	ESP_LOGI("FAN", "my_json_string\n%s",my_json_string);
+		if( flag_IS_WEARABLE == 0 ) //Static Main
+		{
+			xSemaphoreTake(sema_uart2, portMAX_DELAY);
+			write(fd_uart2, my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_uart2);
+		}
+		else // Wearable Main
+		{
+			xSemaphoreTake(sema_tcp, portMAX_DELAY);
+			send_to_server(my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_tcp);
+		}
+	   	cJSON_Delete(root);
+    } 
+	else if (ret == ESP_ERR_TIMEOUT) 
+	{
+        ESP_LOGW(TAG, "Bus is busy");
+    } 
+	else 
+	{
+        ESP_LOGW(TAG, "Read failed");
+    }
+
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+        return 1;
+    }
+
+	return 0;
+	// ===========================================
+
+}
+
 static int do_esp32_fan_ctrl(int argc, char **argv) 
 {
 	int chip_addr = FAN_CTRL_I2C_DEV_ADDR;
@@ -744,13 +816,17 @@ static int do_esp32_fan_ctrl(int argc, char **argv)
         return 1;
     }
 
-	char val = ( atoi(argv[1]) * 255 ) / 100 ; 
-	ESP_LOGW("fan value", "%s(%) = %02x", (char*)argv[1], (int)val );
+	int val = ( atoi(argv[1]) * 255 ) / 100 ; 
+//  	char str[20];
+//  	memset(str, 0, sizeof(str));
+//  	sprintf(str, argv[1], strlen(argv[1]));
+//  	ESP_LOGW("fan value", "%s(%) = %02x", str, val ); // Type Conversion Error ?????
+	ESP_LOGW("fan value", "%s(percent) = %02x", argv[1], val );
 
 	char data[3] ;
 	data[0] = 0x2f;
 	data[1] = 0x30;
-	data[2] = val;
+	data[2] = (char)val;
 
 	hexdump3("FAN Duty Change", data, sizeof(data));
 
@@ -766,6 +842,12 @@ static int do_esp32_fan_ctrl(int argc, char **argv)
     } else {
         ESP_LOGW(TAG, "Write Failed: FAN_Ctrl");
     }
+
+//  //  	do_fan_report(val, "PWM Duty");
+//  //  	직접 읽어서 처리하도록 함
+//  	do_fan_report(); //따로 주기적으로 보내도록 함
+	
+
 //      free(data);
     if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
         return -20;
@@ -1199,6 +1281,10 @@ void i2c_sensor_task(void *arg)
 
 		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 		do_get_PM2008((int)NULL, (char**)NULL);
+		xSemaphoreGive(sema_i2c1);
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		do_fan_report(); // register 를 읽어서 보냄 mode는 "PWM duty"로 고정
 		xSemaphoreGive(sema_i2c1);
 
        	vTaskDelay(10000 / portTICK_PERIOD_MS);
