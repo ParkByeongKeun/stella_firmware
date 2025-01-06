@@ -59,6 +59,7 @@ static uint32_t i2c_frequency = 100 * 1000;
 
 int flag_CO2_sensor_OK = 0 ;
 int flag_IS_WEARABLE = 0 ;
+int flag_USE_W5500_Ethernet = 1 ;
 
 //  i2c_master_dev_handle_t dev_handle_i2c1; // device_address를 그때그때 바꾸려고 했는데
 //  											Error  ...add_device() --> ...rm_device()를 해야 한다.
@@ -1375,18 +1376,19 @@ void app_main(void)
         ESP_LOGW("shcho", "This Board is Wearable(%d): No UART_MUX(UART1) / No CM4 Communication(UART2)", flag_IS_WEARABLE);
 
 
-	#if ( WEARABLE_USE_W5500 == 1 ) 
-	    ESP_ERROR_CHECK(esp_netif_init());
-	    ESP_ERROR_CHECK(esp_event_loop_create_default());
-	
-	    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-	     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-	     * examples/protocols/README.md for more information about this function.
-	     */
-	    ESP_ERROR_CHECK(example_connect());
-//      	tcp_client(); // org : OK shcho
-//      	xTaskCreate(tcp_client_task, "tcp_client", 4 * 1024, NULL, 5, NULL); // OK shcho // It is Just Test
-	#endif
+		if( flag_USE_W5500_Ethernet == 1 ) 
+		{
+		    ESP_ERROR_CHECK(esp_netif_init());
+		    ESP_ERROR_CHECK(esp_event_loop_create_default());
+		
+		    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
+		     * Read "Establishing Wi-Fi or Ethernet Connection" section in
+		     * examples/protocols/README.md for more information about this function.
+		     */
+		    ESP_ERROR_CHECK(example_connect());
+	//      	tcp_client(); // org : OK shcho
+	//      	xTaskCreate(tcp_client_task, "tcp_client", 4 * 1024, NULL, 5, NULL); // OK shcho // It is Just Test
+		}
 
     }
     else
@@ -1445,9 +1447,10 @@ void app_main(void)
 
 
 
-	#if (WEARABLE_USE_W5500 == 0 )
-	app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A / and ZE08
-	#endif
+//  	if( flag_USE_W5500_Ethernet == 1 ) 
+	{
+		app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A / and ZE08
+	}
 
 	if( flag_IS_WEARABLE == 0 ) //Static Main
 	{

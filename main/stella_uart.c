@@ -29,6 +29,7 @@ static const char* TAG = "uart_select_example";
 extern SemaphoreHandle_t sema_uart1 ;
 extern SemaphoreHandle_t sema_uart2 ;
 extern char my_mac_str[32];
+extern int flag_USE_W5500_Ethernet;
 
 #define GPIO_MUX_SEL_A0    39
 #define GPIO_MUX_SEL_A1    38
@@ -303,8 +304,8 @@ int extract_info_RS9A_send(char *ver_str, char *sn_str, char *value_str)
 	}
 	ESP_LOGI("RS9A", "my_json_string\n%s",my_json_string);
 
-	if( strncasecmp(RS9A_format.RS9A_Status, "NORMAL", strlen("NORMAL") ) == STR_MATCH ) 
-	{
+//  	if( strncasecmp(RS9A_format.RS9A_Status, "NORMAL", strlen("NORMAL") ) == STR_MATCH ) 
+//  	{
 		
 		if( flag_IS_WEARABLE == 0 ) //Static Main
 		{
@@ -320,7 +321,9 @@ int extract_info_RS9A_send(char *ver_str, char *sn_str, char *value_str)
 //  			#endif
 //  			xSemaphoreGive(sema_uart2);
 //  		}
-	}
+//
+//
+//  	}
 
     cJSON_Delete(root);
 
@@ -462,6 +465,9 @@ static void uart_select_task_uart1(void *arg)
     int fd_uart1;
     while (1) 
 	{
+//  		ESP_LOGE("test", "- flasg_IS_WEARABLE=%d -- flag_USE_W5500_Ethernet=%d - order = %d --\n", 
+//  						(int)flag_IS_WEARABLE, flag_USE_W5500_Ethernet, (int)order );
+
 		if( (order % 2  == 0) && ( flag_IS_WEARABLE == 0 ) )  // RS9A
 		{
 			uart_mux_select(MUX_SEL_RS9A);
@@ -570,8 +576,7 @@ static void uart_select_task_uart1(void *arg)
 			xSemaphoreGive(sema_uart1);
 			vTaskDelay(5000 / portTICK_PERIOD_MS);
 		}
-		#if ( WEARABLE_USE_W5500 == 0 )
-		else if( order % 2  == 1 )  // ZE08
+		else if( (order % 2  == 1) && (flag_USE_W5500_Ethernet == 0) )  // ZE08
 		{
 //  			uart_config = &uart_config_RS9A;
 			uart_mux_select(MUX_SEL_ZE08);
@@ -679,8 +684,11 @@ static void uart_select_task_uart1(void *arg)
 			vTaskDelay(5000 / portTICK_PERIOD_MS);
 
 		}
-		#endif // WEARABLE_USE_W5500
+
 		order ++;
+		//아무것도 없을 때는 Error가 나니까 : -> 조금쉬어야 한다.
+		// Static Main에서는 OK
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
     vTaskDelete(NULL);
@@ -737,34 +745,6 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
 //  void app_main_stella_uart(void)
 void app_main_stella_uart1(void)
 {
-//  	gpio_config_t io_conf;
-//  
-//  	// detect Is it Wearable : Static은 Pull-up :10K GPIO_38(MIX_A0) / GPIO_39(MUX_A0)
-//      //interrupt of rising edge
-//      io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
-//      //bit mask of the pins, use GPIO4/5 here
-//      io_conf.pin_bit_mask = GPIO_MUX_PIN_SEL;
-//      //set as input mode
-//      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
-//      //enable pull-up mode
-//      io_conf.pull_up_en = 0; // 1 --> 0 
-//      io_conf.pull_down_en = 0; //NULL --> 0 
-//      gpio_config(&io_conf);
-//  
-//  	int val_mux_A0 = gpio_get_level(GPIO_MUX_A0);
-//  	int val_mux_A1 = gpio_get_level(GPIO_MUX_A1);
-//  
-//  	if( val_mux_A0 == 0 && val_mux_A1 == 0 ) 
-//  	{
-//  		flag_IS_WEARABLE = 1 ; 
-//  		ESP_LOGW("shcho", "This Board is Wearable(%d): No UART_MUX(UART1) / No CM4 Communication(UART2)", flag_IS_WEARABLE);
-//  	}
-//  	else
-//  	{
-//  		flag_IS_WEARABLE = 0 ; 
-//  		ESP_LOGW("shcho", "This Board is Static(%d): : UART_MUX(UART1) / CM4 Communication(UART2)", flag_IS_WEARABLE);
-//  	}
-//  
 	ESP_LOGW("shcho", "uart_mux_select(MUX_SEL_RS9A)");
 	uart_mux_select(MUX_SEL_RS9A);
 

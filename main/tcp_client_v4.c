@@ -33,6 +33,8 @@ static const char *TAG = "example";
 static const char *payload = "(from ESP32)Type Message to ESP32 :";
 extern esp_err_t ijoon_get_nvs_str(uint8_t *key, uint8_t *value);
 
+extern int flag_USE_W5500_Ethernet;
+
 //  int len = recv(sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
 int recv_using_select( int sock, char *rx_buffer, int len )
 {
@@ -80,116 +82,117 @@ int recv_using_select( int sock, char *rx_buffer, int len )
 }
 
 //  void tcp_client(void)
-#if (WEARABLE_USE_W5500 == 0 )
 //  #error 111111111111111111111111111111111111111
 int send_to_server(char *payload, int len)
 {
-	// test : just return
-	return 1;
-	
-}
-#else
-//  #error 222222222222222222222222222222222222222
-int send_to_server(char *payload, int len)
-{
-    char rx_buffer[1024];
-
-//      char host_ip[] = HOST_IP_ADDR;
-    char host_ip[100];
-	uint16_t port;
-
-    int addr_family = 0;
-    int ip_protocol = 0;
 	int ret = -1 ;
 
-	//============================================================
-	memset(rx_buffer, 0, sizeof(rx_buffer));
-	ijoon_get_nvs_str((uint8_t*)"serverport", (uint8_t*)rx_buffer);
-	if( rx_buffer[0] == 0 )
+	if ( flag_USE_W5500_Ethernet == 1 )
 	{
-		ESP_LOGW("nvs_relate", "set_nvs_str serverport 33333 (example)");
-		ESP_LOGW("nvs_relate", "set_nvs_str serverport 33333 (example)");
-		ESP_LOGW("nvs_relate", "set_nvs_str serverport 33333 (example)");
-		port = PORT;
+	    char rx_buffer[1024];
+	
+	//      char host_ip[] = HOST_IP_ADDR;
+	    char host_ip[100];
+		uint16_t port;
+	
+	    int addr_family = 0;
+	    int ip_protocol = 0;
+	
+		//============================================================
+		memset(rx_buffer, 0, sizeof(rx_buffer));
+		ijoon_get_nvs_str((uint8_t*)"serverport", (uint8_t*)rx_buffer);
+		if( rx_buffer[0] == 0 )
+		{
+			ESP_LOGW("nvs_relate", "set_nvs_str serverport 33333 (example)");
+			ESP_LOGW("nvs_relate", "set_nvs_str serverport 33333 (example)");
+			ESP_LOGW("nvs_relate", "set_nvs_str serverport 33333 (example)");
+			port = PORT;
+		}
+		else
+		{
+			port = atoi(rx_buffer);
+		}
+		//----------------------------------------------------------------------
+		memset(host_ip, 0, sizeof(host_ip));
+		ijoon_get_nvs_str((uint8_t*)"serverip", (uint8_t*)host_ip);
+		if( host_ip[0] == 0 )
+		{
+			ESP_LOGW("nvs_relate", "set_nvs_str serverip 192.68.10.111 (example)");
+			ESP_LOGW("nvs_relate", "set_nvs_str serverip 192.68.10.111 (example)");
+			ESP_LOGW("nvs_relate", "set_nvs_str serverip 192.68.10.111 (example)");
+			strcpy(host_ip, HOST_IP_ADDR);
+		}
+		//============================================================
+		
+	//      while (1) 
+		{
+	        struct sockaddr_in dest_addr;
+	        inet_pton(AF_INET, host_ip, &dest_addr.sin_addr);
+	        dest_addr.sin_family = AF_INET;
+	        dest_addr.sin_port = htons(port);
+	        addr_family = AF_INET;
+	        ip_protocol = IPPROTO_IP;
+			ESP_LOGW("shcho", "1111111111111111111111111111111111");
+	
+	        int sock =  socket(addr_family, SOCK_STREAM, ip_protocol);
+	        if (sock < 0) {
+	            ESP_LOGE("send_to_server", "Unable to create socket: errno %d", errno);
+	            ret = -1 ;
+	        }
+	        ESP_LOGI("send_to_server", "Socket created, connecting to %s:%d", host_ip, PORT);
+	
+	        int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+	        if (err != 0) {
+	            ESP_LOGE("send_to_server", "Socket unable to connect: errno %d", errno);
+	            ret = err;
+	        }
+	        ESP_LOGI("send_to_server", "Successfully connected");
+	
+	//          while (1) 
+			{
+	//              int err = send(sock, payload, strlen(payload), 0);
+	            int err = send(sock, payload, len, 0);
+	            if (err < 0) {
+	                ESP_LOGE("send_to_server", "Error occurred during sending: errno %d", errno);
+	                ret = err;
+	            }
+	
+	            int len_read = recv_using_select(sock, rx_buffer, sizeof(rx_buffer));
+	            // Error occurred during receiving
+	            if (len_read < 0) {
+	                ESP_LOGE("send_to_server", "recv failed: errno %d", errno);
+	                ret = len_read;
+	            }
+	            // Data received
+	            else if (len_read < 0) 
+				{
+	                ESP_LOGE("send_to_server", "recv timeout : errno %d", errno);
+	                ret = len_read;
+				}
+	            else {
+	                rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
+	                ESP_LOGI("send_to_server", "Received %d bytes from %s:", len, host_ip);
+	                ESP_LOGI("send_to_server", "%s", rx_buffer);
+	            }
+	        }
+	
+	        if (sock != -1) {
+	            ESP_LOGW("send_to_server", "Shutting down socket");
+	            shutdown(sock, 0);
+	            close(sock);
+	        }
+	    }
+	
 	}
 	else
 	{
-		port = atoi(rx_buffer);
+		// test : just return
+		ret = 0 ;
 	}
-	//----------------------------------------------------------------------
-	memset(host_ip, 0, sizeof(host_ip));
-	ijoon_get_nvs_str((uint8_t*)"serverip", (uint8_t*)host_ip);
-	if( host_ip[0] == 0 )
-	{
-		ESP_LOGW("nvs_relate", "set_nvs_str serverip 192.68.10.111 (example)");
-		ESP_LOGW("nvs_relate", "set_nvs_str serverip 192.68.10.111 (example)");
-		ESP_LOGW("nvs_relate", "set_nvs_str serverip 192.68.10.111 (example)");
-		strcpy(host_ip, HOST_IP_ADDR);
-	}
-	//============================================================
-	
-//      while (1) 
-	{
-        struct sockaddr_in dest_addr;
-        inet_pton(AF_INET, host_ip, &dest_addr.sin_addr);
-        dest_addr.sin_family = AF_INET;
-        dest_addr.sin_port = htons(port);
-        addr_family = AF_INET;
-        ip_protocol = IPPROTO_IP;
-		ESP_LOGW("shcho", "1111111111111111111111111111111111");
-
-        int sock =  socket(addr_family, SOCK_STREAM, ip_protocol);
-        if (sock < 0) {
-            ESP_LOGE("send_to_server", "Unable to create socket: errno %d", errno);
-            ret = -1 ;
-        }
-        ESP_LOGI("send_to_server", "Socket created, connecting to %s:%d", host_ip, PORT);
-
-        int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-        if (err != 0) {
-            ESP_LOGE("send_to_server", "Socket unable to connect: errno %d", errno);
-            ret = err;
-        }
-        ESP_LOGI("send_to_server", "Successfully connected");
-
-//          while (1) 
-		{
-//              int err = send(sock, payload, strlen(payload), 0);
-            int err = send(sock, payload, len, 0);
-            if (err < 0) {
-                ESP_LOGE("send_to_server", "Error occurred during sending: errno %d", errno);
-                ret = err;
-            }
-
-            int len_read = recv_using_select(sock, rx_buffer, sizeof(rx_buffer));
-            // Error occurred during receiving
-            if (len_read < 0) {
-                ESP_LOGE("send_to_server", "recv failed: errno %d", errno);
-                ret = len_read;
-            }
-            // Data received
-            else if (len_read < 0) 
-			{
-                ESP_LOGE("send_to_server", "recv timeout : errno %d", errno);
-                ret = len_read;
-			}
-            else {
-                rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
-                ESP_LOGI("send_to_server", "Received %d bytes from %s:", len, host_ip);
-                ESP_LOGI("send_to_server", "%s", rx_buffer);
-            }
-        }
-
-        if (sock != -1) {
-            ESP_LOGW("send_to_server", "Shutting down socket");
-            shutdown(sock, 0);
-            close(sock);
-        }
-    }
 
 	return ret;
+	
 }
-#endif
 
 //  void tcp_client(void)
 void tcp_client_task(void* arg)
