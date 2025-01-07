@@ -139,7 +139,8 @@ int send_to_server(char *payload, int len)
 	            ESP_LOGE("send_to_server", "Unable to create socket: errno %d", errno);
 	            ret = -1 ;
 	        }
-	        ESP_LOGI("send_to_server", "Socket created, connecting to %s:%d", host_ip, PORT);
+//  	        ESP_LOGI("send_to_server", "Socket created, connecting to %s:%d", host_ip, PORT);
+	        ESP_LOGI("send_to_server", "Socket created, connecting to %s:%d", host_ip, port);
 	
 	        int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
 	        if (err != 0) {
