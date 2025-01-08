@@ -842,6 +842,7 @@ static int do_esp32_fan_ctrl(int argc, char **argv)
         return 1;
     }
 
+
 	int val = ( atoi(argv[1]) * 255 ) / 100 ; 
 //  	char str[20];
 //  	memset(str, 0, sizeof(str));
@@ -863,6 +864,7 @@ static int do_esp32_fan_ctrl(int argc, char **argv)
 										I2C_TOOL_TIMEOUT_VALUE_MS);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Write OK : FAN_Ctrl");
+		ijoon_set_nvs_str((uint8_t*)"fan_pwm", (uint8_t*)argv[1]);
     } else if (ret == ESP_ERR_TIMEOUT) {
         ESP_LOGW(TAG, "Bus is busy: FAN_Ctrl");
     } else {
