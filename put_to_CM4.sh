@@ -1,3 +1,12 @@
-scp build/stella_firmware.bin                 stella@stella-3:/home/stella/stella_firmware/build
-scp build/bootloader/bootloader.bin           stella@stella-3:/home/stella/stella_firmware/build/bootloader
-scp build/partition_table/partition-table.bin stella@stella-3:/home/stella/stella_firmware/build/partition_table
+#!/bin/bash
+
+if [ -z $1 ] ; then
+	echo ""
+	echo "	specify hostname or ip_address"
+	echo ""
+	exit
+fi
+hostname=$1
+scp build/stella_firmware.bin                 stella@$hostname:/home/stella/stella_firmware/build/stella_firmware.bin
+scp build/bootloader/bootloader.bin           stella@$hostname:/home/stella/stella_firmware/build/bootloader/bootloader.bin
+scp build/partition_table/partition-table.bin stella@$hostname:/home/stella/stella_firmware/build/partition_table/partition-table.bin

@@ -72,6 +72,8 @@ extern void tcp_client_task(void* arg);
 extern int send_to_server(char *payload, int len);
 extern void app_main_task_oled(void *arg);
 
+static int do_esp32_fan_ctrl(int argc, char **argv) ;
+
 //  //  static gpio_num_t i2c_gpio_sda = CONFIG_EXAMPLE_I2C_MASTER_SDA;
 //  //  static gpio_num_t i2c_gpio_scl = CONFIG_EXAMPLE_I2C_MASTER_SCL;
 //  static gpio_num_t i2c_gpio_sda = 7; // i2c2 : SDA 16
@@ -802,6 +804,29 @@ int do_fan_report(void)
 
 }
 
+static int set_fan_pwm(void)
+{
+	char fan_pwm_str[10];
+	memset( fan_pwm_str, 0, sizeof(fan_pwm_str) );
+	ijoon_get_nvs_str((uint8_t *)"fan_pwm", (uint8_t*)fan_pwm_str);
+
+	int argc = 2 ;
+	char *argv[2];
+
+	if( fan_pwm_str[0] == 0 )
+	{
+		ESP_LOGW("fan_pwn", "fan_pwm duty is not set --> set to 100(percent)");
+		argv[1] = (char *)"100";
+	}
+	else
+	{
+		ESP_LOGW("fan_pwn", "fan_pwm is %s %% (pwm_duty percent)", fan_pwm_str);
+		argv[1] = (char *)fan_pwm_str;
+	}
+	do_esp32_fan_ctrl(argc,argv);
+
+	return 0;
+}
 static int do_esp32_fan_ctrl(int argc, char **argv) 
 {
 	int chip_addr = FAN_CTRL_I2C_DEV_ADDR;
@@ -1483,6 +1508,8 @@ void app_main(void)
 
     register_i2ctools();
 	register_stella_cmd();
+
+	set_fan_pwm();
 
     printf("\n ==============================================================\n");
     printf(" |             Steps to Use i2c-tools                         |\n");
