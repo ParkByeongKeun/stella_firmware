@@ -35,6 +35,10 @@
 #include "protocol_examples_common.h"
 #include "esp_event.h"
 
+#include <sht4x.h>
+#include <sgp40.h>
+#include <ets_sys.h>
+
 #include "stella_global.h"
 
 #define STORAGE_NAMESPACE "storage"
@@ -57,9 +61,45 @@ static uint32_t i2c_frequency = 100 * 1000;
 #define GPIO_INPUT_IO_1     39
 #define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_INPUT_IO_0) | (1ULL<<GPIO_INPUT_IO_1))
 
+#define GPIO_ZMOD_RESET    45
+
+#define SHT4X_CMD_RESET             0x94
+#define SHT4X_CMD_SERIAL            0x89
+#define SHT4X_CMD_MEAS_HIGH         0xfd
+#define SHT4X_CMD_MEAS_MED          0xf6
+#define SHT4X_CMD_MEAS_LOW          0xe0
+#define SHT4X_CMD_MEAS_H_HIGH_LONG  0x39
+#define SHT4X_CMD_MEAS_H_HIGH_SHORT 0x32
+#define SHT4X_CMD_MEAS_H_MED_LONG   0x2f
+#define SHT4X_CMD_MEAS_H_MED_SHORT  0x24
+#define SHT4X_CMD_MEAS_H_LOW_LONG   0x1e
+#define SHT4X_CMD_MEAS_H_LOW_SHORT  0x15
+
+
+#define SGP40_CMD_SOFT_RESET  0x0006
+#define SGP40_CMD_FEATURESET  0x202f
+#define SGP40_CMD_MEASURE_RAW 0x260f
+#define SGP40_CMD_SELF_TEST   0x280e
+#define SGP40_CMD_SERIAL      0x3682
+#define SGP40_CMD_HEATER_OFF  0x3615
+
+#define SGP40_TIME_SOFT_RESET  (10)
+#define SGP40_TIME_FEATURESET  (10)
+#define SGP40_TIME_MEASURE_RAW (30)
+#define SGP40_TIME_SELF_TEST   (250)
+#define SGP40_TIME_HEATER_OFF  (10)
+#define SGP40_TIME_SERIAL      (10)
+
+#define SELF_TEST_OK 0xd400
+
+
+
 int flag_CO2_sensor_OK = 0 ;
 int flag_IS_WEARABLE = 0 ;
 int flag_USE_W5500_Ethernet = 1 ;
+int ZMOD_Reset_GPIO(int val);
+
+
 
 //  i2c_master_dev_handle_t dev_handle_i2c1; // device_address를 그때그때 바꾸려고 했는데
 //  											Error  ...add_device() --> ...rm_device()를 해야 한다.
@@ -134,6 +174,7 @@ int send_CM1106_data( struct _CO2_ppm_packet *data );
 
 static const char *JSON_TAG = "JSON";
 
+extern void task_sgp40(void *pvParamters);
 
 void test_json(void)
 {
@@ -1281,10 +1322,9 @@ PM2008_data_retry:
 
 
 
-void i2c_sensor_task(void *arg)
+void i2c1_sensor_task(void *arg)
 {
 	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
 
 	set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);
     vTaskDelay(5000 / portTICK_PERIOD_MS);
@@ -1293,11 +1333,6 @@ void i2c_sensor_task(void *arg)
 //  	set_PM2008_mode(PM2008_CMD_SETUP_TIMING_MEASURE, 180);
 //      vTaskDelay(2000 / portTICK_PERIOD_MS);
 	xSemaphoreGive(sema_i2c1);
-	xSemaphoreGive(sema_i2c2);
-
-
-
-
 	
 	while(1)
 	{
@@ -1318,6 +1353,515 @@ void i2c_sensor_task(void *arg)
        	vTaskDelay(10000 / portTICK_PERIOD_MS);
 	}
 }
+
+
+static sht4x_t dev_sht4x; //shcho add
+static sgp40_t dev_sgp40;
+#define I2C2_FREQ_HZ 400000
+
+#define G_POLYNOM_SHT4x 0x31
+
+static uint8_t crc8_sht4x(uint8_t data[], size_t len)
+{
+    uint8_t crc = 0xff;
+
+    for (size_t i = 0; i < len; i++)
+    {
+        crc ^= data[i];
+        for (size_t i = 0; i < 8; i++)
+            crc = crc & 0x80 ? (crc << 1) ^ G_POLYNOM_SHT4x : crc << 1;
+    }
+    return crc;
+}
+
+static uint8_t crc8_sgp40(const uint8_t *data, size_t count)
+{
+    uint8_t res = 0xff;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        res ^= data[i];
+        for (uint8_t bit = 8; bit > 0; --bit)
+        {
+            if (res & 0x80)
+                res = (res << 1) ^ 0x31;
+            else
+                res = (res << 1);
+        }
+    }
+    return res;
+}
+
+//  int get_SHT4x_Serial_num(sht4x_t *dev, int cmd, sht4x_raw_data_t *s, int len)
+int get_SHT4x_cmd_resp(sht4x_t *dev, int cmd, sht4x_raw_data_t res, int len)
+{
+    i2c_device_config_t i2c_dev_conf = {
+//          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+        .scl_speed_hz = 100000 , // 100KHz //i2c_frequency,
+        .device_address = dev->i2c_dev.addr,
+    };
+	ESP_LOGW("get_SHT4x_cmd_resp", "chip_addr=%02x, cmd=%02x", dev->i2c_dev.addr, cmd);
+
+	i2c_master_dev_handle_t dev_handle_i2c2;
+    if (i2c_master_bus_add_device( tool_bus_handle_i2c2, 
+	                              &i2c_dev_conf, 
+								  &dev_handle_i2c2) != ESP_OK) 
+	{
+        return 1;
+    }
+
+//  SHT4x_get_Serial_num_retry :
+	memset((char *)res, 0, sizeof(sht4x_raw_data_t));
+
+	uint8_t command = (uint8_t)cmd;
+    esp_err_t ret = i2c_master_transmit(dev_handle_i2c2, (uint8_t*)&command, 1, I2C_TOOL_TIMEOUT_VALUE_MS);
+
+    vTaskDelay(pdMS_TO_TICKS(10) + 1);  //바로 응답하지 못해서(NACK) : need Delay
+
+	if ( len != 0 ) 
+	{
+		ret = i2c_master_receive(dev_handle_i2c2, (uint8_t*)res, len, I2C_TOOL_TIMEOUT_VALUE_MS);
+	    if (ret == ESP_OK) {
+	        ESP_LOGI(TAG, "SHT4x I2C Fead OK : Get Serial Num(Receive)");
+			hexdump3("SHT4x cmd_resp Raw data", res , len);
+
+			ESP_LOGW("SHT4x_cmd_resp", "crc ( 0x%02x, 0x%02x )", crc8_sht4x(res,2), crc8_sht4x(res+3,2));
+			if (res[2] != crc8_sht4x(res, 2) || res[5] != crc8_sht4x(res + 3, 2))
+			{
+			    ESP_LOGE(TAG, "get_SHT4x_cmd_resp : Invalid CRC");
+			    return ESP_ERR_INVALID_CRC;
+			}
+			
+	    } else if (ret == ESP_ERR_TIMEOUT) {
+	        ESP_LOGW(TAG, "SHT4x I2C Bus is busy: Get Serial Num(Receive)");
+	    } else {
+	        ESP_LOGW(TAG, "SHT4x I2C Read Failed: Get Serial Num(Receive)");
+	    }
+	}
+
+    if (i2c_master_bus_rm_device(dev_handle_i2c2) != ESP_OK) {
+        return -20;
+    }
+
+	return 0;
+}
+
+static inline uint16_t swap16_sgp40(uint16_t v)
+{
+    return (v << 8) | (v >> 8);
+}
+
+static esp_err_t send_cmd_sgp40(sgp40_t *dev, uint16_t cmd, uint16_t *data, size_t words)
+{
+	uint8_t buf[2 + words * 3];
+    // add command
+    *(uint16_t *)buf = swap16_sgp40(cmd);
+    if (data && words)
+        // add arguments
+        for (size_t i = 0; i < words; i++)
+        {
+            uint8_t *p = buf + 2 + i * 3;
+            *(uint16_t *)p = swap16_sgp40(data[i]);
+   	         *(p + 2) = crc8_sgp40(p, 2);
+        }
+
+    ESP_LOGV(TAG, "Sending buffer:");
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, sizeof(buf), ESP_LOG_VERBOSE);
+
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+        .device_address = dev->i2c_dev.addr,
+    };
+	ESP_LOGW("get_SGP40_cmd_resp", "chip_addr=%02x, words=%d, cmd=%04x", dev->i2c_dev.addr, words, cmd);
+
+    i2c_master_dev_handle_t dev_handle_i2c2;
+    if (i2c_master_bus_add_device(  tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle_i2c2) != ESP_OK) { return 1; }
+
+	hexdump3("SGP40 send_cmd_sgp40", buf, 2+words*3);
+    esp_err_t ret = i2c_master_transmit(dev_handle_i2c2, 
+	                                    (uint8_t *)buf, 
+										2+words*3, 
+										I2C_TOOL_TIMEOUT_VALUE_MS);
+
+    if (i2c_master_bus_rm_device(dev_handle_i2c2) != ESP_OK) {
+        return -20;
+    }
+//      return i2c_dev_write(dev, NULL, 0, buf, sizeof(buf));
+    return ret;
+
+}
+
+static esp_err_t read_resp_sgp40(sgp40_t *dev, uint16_t *data, size_t words)
+{
+    uint8_t buf[words * 3];
+
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+        .device_address = dev->i2c_dev.addr,
+    };
+	ESP_LOGW("read_resp_sgp40", "chip_addr=%02x, words=%d", dev->i2c_dev.addr, words);
+
+    i2c_master_dev_handle_t dev_handle_i2c2;
+    if (i2c_master_bus_add_device(  tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle_i2c2) != ESP_OK) { return 1; }
+
+//  	vTaskDelay(pdMS_TO_TICKS(wait_ms));
+	esp_err_t ret = i2c_master_receive(dev_handle_i2c2, (uint8_t*)buf, words*(2+1), I2C_TOOL_TIMEOUT_VALUE_MS);
+
+    ESP_LOGV(TAG, "Received buffer:");
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, sizeof(buf), ESP_LOG_VERBOSE);
+
+    for (size_t i = 0; i < words; i++)
+    {
+        uint8_t *p = buf + i * 3;
+        uint8_t crc = crc8_sgp40(p, 2);
+        if (crc != *(p + 2))
+        {
+            ESP_LOGE(TAG, "Invalid CRC 0x%02x, expected 0x%02x", crc, *(p + 2));
+            return ESP_ERR_INVALID_CRC;
+        }
+        data[i] = swap16_sgp40(*(uint16_t *)p);
+    }
+
+    if (i2c_master_bus_rm_device(dev_handle_i2c2) != ESP_OK) {
+        return -20;
+    }
+
+//      return ESP_OK;
+    return ret;
+}
+
+
+int get_SGP40_cmd_resp_inout(sgp40_t *dev, int cmd, uint32_t timeout_ms, 
+        uint16_t *out_data, size_t out_words, uint16_t *in_data, size_t in_words)
+{
+//      I2C_DEV_CHECK(&dev->i2c_dev, send_cmd(&dev->i2c_dev, cmd, out_data, out_words));
+    send_cmd_sgp40(dev, cmd, out_data, out_words);
+    if (timeout_ms)
+    {
+        if (timeout_ms > 10)
+            vTaskDelay(pdMS_TO_TICKS(timeout_ms));
+        else
+            ets_delay_us(timeout_ms * 1000);
+    }
+    if (in_data && in_words)
+	{
+//          I2C_DEV_CHECK(&dev->i2c_dev, read_resp(&dev->i2c_dev, in_data, in_words));
+        read_resp_sgp40(dev, in_data, in_words);
+	}
+	return 0;
+}
+
+static const char *voc_index_name(int32_t voc_index)
+{
+    if (voc_index <= 0) return "INVALID VOC INDEX";
+    else if (voc_index <= 10) return "unbelievable clean";
+    else if (voc_index <= 30) return "extremely clean";
+    else if (voc_index <= 50) return "higly clean";
+    else if (voc_index <= 70) return "very clean";
+    else if (voc_index <= 90) return "clean";
+    else if (voc_index <= 120) return "normal";
+    else if (voc_index <= 150) return "moderately polluted";
+    else if (voc_index <= 200) return "higly polluted";
+    else if (voc_index <= 300) return "extremely polluted";
+
+
+
+    return "RUN!";
+}
+
+
+static esp_err_t sgp40_measure_raw_shcho(sgp40_t *dev, float humidity, float temperature, uint16_t *raw);
+static esp_err_t sgp40_measure_voc_shcho(sgp40_t *dev, float humidity, float temperature, int32_t *voc_index)
+{
+//      CHECK_ARG(dev && voc_index);
+
+    uint16_t raw;
+//      CHECK(sgp40_measure_raw(dev, humidity, temperature, &raw));
+    sgp40_measure_raw_shcho(dev, humidity, temperature, &raw);
+
+    VocAlgorithm_process(&dev->voc, raw, voc_index);
+
+    return ESP_OK;
+}
+
+
+
+int get_SGP40_cmd_resp(sgp40_t *dev, int cmd, uint16_t *data, int words, int wait_ms)
+{
+	uint8_t sgp40_resp[10*3];
+
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+        .device_address = dev->i2c_dev.addr,
+    };
+	ESP_LOGW("get_SGP40_cmd_resp", "chip_addr=%02x, words=%d, cmd=%04x", dev->i2c_dev.addr, words, cmd);
+
+    i2c_master_dev_handle_t dev_handle_i2c2;
+    if (i2c_master_bus_add_device(  tool_bus_handle_i2c2, 
+	                               &i2c_dev_conf, 
+								   &dev_handle_i2c2) != ESP_OK) 
+	{
+        return 1;
+    }
+
+	char i2c_cmd[2] ;
+	i2c_cmd[0] = (char)((cmd & 0xff00) >> 8);
+	i2c_cmd[1] = (char)((cmd & 0x00ff) >> 0);
+	hexdump3("SGP40 cmd packet", data, sizeof(data));
+    esp_err_t ret = i2c_master_transmit(dev_handle_i2c2, 
+	                                    (uint8_t *)i2c_cmd, 
+										2, 
+										I2C_TOOL_TIMEOUT_VALUE_MS);
+    if (ret == ESP_OK) 
+	{
+    } else if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW("get_SGP40_Serial_num", "Bus is busy");
+    } else {
+        ESP_LOGW("get_SGP40_Serial_num", "Read failed(transmit_receive)");
+    }
+
+//      vTaskDelay( wait_ms / portTICK_PERIOD_MS );
+	vTaskDelay(pdMS_TO_TICKS(wait_ms));
+	ret = i2c_master_receive(dev_handle_i2c2, (uint8_t*)sgp40_resp, words*(2+1), I2C_TOOL_TIMEOUT_VALUE_MS);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "SGP40 I2C Fead OK : Get Serial Num(Receive)");
+		hexdump3("SGP40_cmd_resp Raw data", sgp40_resp , words*(2+1));
+
+		for (size_t i = 0; i < words; i++)
+		{
+//  		    uint8_t *p = buf + i * 3;
+		    uint8_t *p = sgp40_resp + i * 3;
+		    uint8_t crc = crc8_sgp40(p, 2);
+		    if (crc != *(p + 2))
+		    {
+		        ESP_LOGE(TAG, "Invalid CRC 0x%02x, expected 0x%02x", crc, *(p + 2));
+		        return ESP_ERR_INVALID_CRC;
+		    }
+		    data[i] = swap16_sgp40(*(uint16_t *)p);
+		}
+	
+    } else if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "SGP40 I2C Bus is busy: Get Serial Num(Receive)");
+    } else {
+        ESP_LOGW(TAG, "SGP40 I2C Read Failed: Get Serial Num(Receive)");
+    }
+
+    if (i2c_master_bus_rm_device(dev_handle_i2c2) != ESP_OK) {
+        return -20;
+    }
+
+	return 0;
+}
+
+esp_err_t sht4x_compute_values_shcho(sht4x_raw_data_t raw_data, float *temperature, float *humidity)
+{
+
+	//shcho comment: E (1063) i2c: CONFLICT! driver_ng is not allowed to be used with this old driver
+//      CHECK_ARG(raw_data && (temperature || humidity));
+
+    if (temperature)
+        *temperature = ((uint16_t)raw_data[0] << 8 | raw_data[1]) * 175.0 / 65535.0 - 45.0;
+
+    if (humidity)
+        *humidity = ((uint16_t)raw_data[3] << 8 | raw_data[4]) * 125.0 / 65535.0 - 6.0;
+
+    return ESP_OK;
+}
+
+static inline uint8_t get_meas_cmd(sht4x_t *dev)
+{
+    switch (dev->heater)
+    {
+        case SHT4X_HEATER_HIGH_LONG:
+            return SHT4X_CMD_MEAS_H_HIGH_LONG;
+        case SHT4X_HEATER_HIGH_SHORT:
+            return SHT4X_CMD_MEAS_H_HIGH_SHORT;
+        case SHT4X_HEATER_MEDIUM_LONG:
+            return SHT4X_CMD_MEAS_H_MED_LONG;
+        case SHT4X_HEATER_MEDIUM_SHORT:
+            return SHT4X_CMD_MEAS_H_MED_SHORT;
+        case SHT4X_HEATER_LOW_LONG:
+            return SHT4X_CMD_MEAS_H_LOW_LONG;
+        case SHT4X_HEATER_LOW_SHORT:
+            return SHT4X_CMD_MEAS_H_LOW_SHORT;
+        default:
+            switch (dev->repeatability)
+            {
+                case SHT4X_HIGH:
+                    return SHT4X_CMD_MEAS_HIGH;
+                case SHT4X_MEDIUM:
+                    return SHT4X_CMD_MEAS_MED;
+                default:
+                    return SHT4X_CMD_MEAS_LOW;
+            }
+    }
+	return 0;	// shcho add
+}
+
+static esp_err_t sgp40_measure_raw_shcho(sgp40_t *dev, float humidity, float temperature, uint16_t *raw)
+{
+//  	CHECK_ARG(dev && raw);
+
+    uint16_t params[2];
+    if (isnan(humidity) || isnan(temperature))
+    {
+        params[0] = 0x8000;
+        params[1] = 0x6666;
+        ESP_LOGW(TAG, "Uncompensated measurement");
+    }
+    else
+    {
+        if (humidity < 0)
+            humidity = 0;
+        else if (humidity > 100)
+            humidity = 100;
+
+        if (temperature < -45)
+            temperature = -45;
+        else if (temperature > 129.76)
+            temperature = 129.76;
+
+        params[0] = (uint16_t)(humidity / 100.0 * 65536);
+        params[1] = (uint16_t)((temperature + 45) / 175.0 * 65535);
+    }
+
+//      return (dev, CMD_MEASURE_RAW, TIME_MEASURE_RAW, params, 2, raw, 1);
+    return get_SGP40_cmd_resp_inout(dev, SGP40_CMD_MEASURE_RAW, SGP40_TIME_MEASURE_RAW, params, 2, raw, 1);
+
+
+}
+
+
+int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
+                  float temperature, float humidity, int voc_index )
+{
+	char  buffer[30];
+    ESP_LOGI(JSON_TAG, "Serialize.....RHT_VOC");
+    cJSON *root;
+   	root = cJSON_CreateObject();
+   	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+//     	cJSON_AddStringToObject(root, "SHT40_Serial_num",   mode);
+	memset(buffer, 0, sizeof(buffer));
+	sprintf(buffer, "%" PRIu32,dev_sht4x->serial);
+   	cJSON_AddStringToObject(root, "SHT40_Serial_num",  buffer);
+	sprintf(buffer, "%3.2f", temperature);
+   	cJSON_AddNumberToObject(root, "SHT40_T",  atof(buffer));
+	sprintf(buffer, "%3.2f", humidity);
+   	cJSON_AddNumberToObject(root, "SHT40_RH", atof(buffer));
+
+	memset(buffer, 0, sizeof(buffer));
+	sprintf(buffer, "%04X_%04X_%04X", dev_sgp40->serial[0],
+	                                  dev_sgp40->serial[1], 
+									  dev_sgp40->serial[2]);
+   	cJSON_AddStringToObject(root, "SGP40_Serial_num",  buffer);
+   	cJSON_AddNumberToObject(root, "SGP40_Voc_index",    voc_index);
+   	cJSON_AddStringToObject(root, "SGP40_Voc_index_name",  voc_index_name(voc_index));
+	sprintf(buffer, "%3.2f", temperature);
+   	cJSON_AddNumberToObject(root, "SGP40_T",  atof(buffer));
+	sprintf(buffer, "%3.2f", humidity);
+   	cJSON_AddNumberToObject(root, "SGP40_RH", atof(buffer));
+
+    char *my_json_string = cJSON_Print(root);
+
+   	ESP_LOGI("RHT_Voc", "my_json_string\n%s",my_json_string);
+	if( flag_IS_WEARABLE == 0 ) //Static Main
+	{
+		xSemaphoreTake(sema_uart2, portMAX_DELAY);
+		write(fd_uart2, my_json_string, strlen(my_json_string));
+		xSemaphoreGive(sema_uart2);
+	}
+	else // Wearable Main
+	{
+		xSemaphoreTake(sema_tcp, portMAX_DELAY);
+		send_to_server(my_json_string, strlen(my_json_string));
+		xSemaphoreGive(sema_tcp);
+	}
+   	cJSON_Delete(root);
+	return 0;
+}
+
+
+void i2c2_sensor_task(void *arg)
+{
+	// 1. ZMOD reset : Power on시에는  0x32가 보이다가  
+	//                 바로 사라짐
+	ZMOD_Reset_GPIO(0);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+	ZMOD_Reset_GPIO(1);
+
+	
+
+	// 2. SHT4x
+    memset(&dev_sht4x, 0, sizeof(dev_sht4x));
+    dev_sht4x.i2c_dev.addr = SHT4X_I2C_ADDRESS;
+    dev_sht4x.i2c_dev.cfg.master.clk_speed = I2C2_FREQ_HZ;
+    dev_sht4x.repeatability = SHT4X_HIGH;
+    dev_sht4x.heater = SHT4X_HEATER_OFF;
+//  	ESP_ERROR_CHECK(sht4x_init_desc(&dev_sht4x, 0, 16, 15));
+
+	// 2. SGP40 : SHT4x등 온습도가 반드시 있어야 함
+    memset(&dev_sgp40, 0, sizeof(dev_sgp40));
+    dev_sgp40.i2c_dev.addr = SGP40_ADDR;
+    dev_sgp40.i2c_dev.cfg.master.clk_speed = I2C2_FREQ_HZ;
+//  	ESP_ERROR_CHECK(sgp40_init_desc(&dev_sgp40, 0, 16, 15));
+
+    sht4x_raw_data_t resp;
+
+
+	// 3. SHT4x Serial_num
+	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+
+		get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_SERIAL, resp, sizeof(resp));
+	    dev_sht4x.serial = ((uint32_t)resp[0] << 24) | ((uint32_t)resp[1] << 16) | ((uint32_t)resp[3] << 8) | resp[4];
+		ESP_LOGW(TAG, "SHT4x initilalized. Serial: %" PRIu32, dev_sht4x.serial);
+		get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_RESET, resp, 0);
+
+	xSemaphoreGive(sema_i2c2);
+	
+	// 3. SGP40 Serial_num -> get featureset --> init VocAlgorithm
+	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+
+		get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_SERIAL, dev_sgp40.serial, 3, SGP40_TIME_SERIAL);
+		get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_FEATURESET, &dev_sgp40.featureset, 1, SGP40_TIME_FEATURESET);
+	    ESP_LOGW(TAG, "SGP40 initilalized. Serial: %04X_%04X_%04X featureset 0x%04x",
+	            dev_sgp40.serial[0], dev_sgp40.serial[1], dev_sgp40.serial[2], dev_sgp40.featureset);
+
+		VocAlgorithm_init(&dev_sgp40.voc);
+		hexdump3("Voc Algo init data", &dev_sgp40.voc , sizeof(dev_sgp40.voc));
+//  		No need : sgp40 example does not execute SOFT)RESET
+//  		get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_SOFT_RESET, NULL, 0, SGP40_TIME_SOFT_RESET);
+
+	xSemaphoreGive(sema_i2c2);
+
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+	float temperature, humidity;
+
+	while(1)
+	{
+		// 4. 온습도
+		xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+			get_SHT4x_cmd_resp(&dev_sht4x, get_meas_cmd(&dev_sht4x), resp, sizeof(resp));
+		xSemaphoreGive(sema_i2c2);
+
+    	sht4x_compute_values_shcho(resp, &temperature, &humidity);
+		ESP_LOGW("sht4x Sensor", " %.2f °C, %.2f %%\n", temperature, humidity);
+
+		// 5. 온습도 --> VOC Index
+		int32_t voc_index;
+		xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+			sgp40_measure_voc_shcho(&dev_sgp40, humidity, temperature, &voc_index);
+		xSemaphoreGive(sema_i2c2);
+
+		ESP_LOGI(TAG, "%.2f °C, %.2f %%, VOC index: %3" PRIi32 ", Air is [%s]",
+					temperature, humidity, voc_index, voc_index_name(voc_index));
+
+		do_rht_voc_report(&dev_sht4x, &dev_sgp40, temperature, humidity, voc_index );
+
+
+       	vTaskDelay(10000 / portTICK_PERIOD_MS);
+	}
+}
+
 
 
 
@@ -1357,7 +1901,33 @@ int Uart_mux_setup(int direction)
     return 1;
 }
 
+int ZMOD_Reset_GPIO(int val)
+{
+    gpio_config_t io_conf;
 
+    // detect Is it Wearable : Static은 Pull-up :10K GPIO_38(MIX_A0) / GPIO_39(MUX_A0)
+    //interrupt of rising edge
+    io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
+    //bit mask of the pins, use GPIO4/5 here
+    io_conf.pin_bit_mask = GPIO_ZMOD_RESET;
+    //set as input mode
+//      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
+//                          0 으로만 읽힌다.
+//      io_conf.mode = GPIO_MODE_INPUT; //
+    io_conf.mode = GPIO_MODE_OUTPUT; //
+    //enable pull-up mode
+    io_conf.pull_up_en = 0; // 1 --> 0
+    io_conf.pull_down_en = 0; //NULL --> 0
+    gpio_config(&io_conf);
+
+	gpio_set_level(GPIO_ZMOD_RESET, val);
+
+
+    return 1;
+}
+
+
+//  #define USE_ESP_IDF_LIB_I2C	(1)
 void app_main(void)
 {
 
@@ -1370,13 +1940,17 @@ void app_main(void)
 
 
 	sema_i2c1 = xSemaphoreCreateBinary();
+//  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
 	sema_i2c2 = xSemaphoreCreateBinary();
+//  	#endif
 	sema_uart1 = xSemaphoreCreateBinary();
 	sema_uart2 = xSemaphoreCreateBinary();
 	sema_tcp = xSemaphoreCreateBinary();
 
 	xSemaphoreGive(sema_i2c1);
+//  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
 	xSemaphoreGive(sema_i2c2);
+//  	#endif
 	xSemaphoreGive(sema_uart1);
 	xSemaphoreGive(sema_uart2);
 	xSemaphoreGive(sema_tcp);
@@ -1434,6 +2008,17 @@ void app_main(void)
        	vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
 
+	if( flag_IS_WEARABLE == 0 ) //Static Main
+	{
+		app_main_stella_uart2(); // send to CM4
+	}
+
+//  	if( flag_USE_W5500_Ethernet == 1 ) 
+	{
+		app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A / and ZE08
+	}
+
+
     i2c_master_bus_config_t i2c_bus_config_i2c1 = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = i2c_port_i2c1,
@@ -1443,6 +2028,7 @@ void app_main(void)
         .flags.enable_internal_pullup = true,
     };
 
+//  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
     i2c_master_bus_config_t i2c_bus_config_i2c2 = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = i2c_port_i2c2,
@@ -1451,10 +2037,13 @@ void app_main(void)
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
+//  	#endif
 
 //  	ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle));
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
+//  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c2, &tool_bus_handle_i2c2));
+//  	#endif
 
 //      i2c_device_config_t i2c_dev_conf = {
 //          .scl_speed_hz = i2c_frequency,
@@ -1470,19 +2059,11 @@ void app_main(void)
 //  for UART2 Debugging : CM4와 연결된 ttyAMA3이 Enable되면 ESP32 Program을 할 수 없음 / monitoring은 됨
 //  	I2C thread
 //  	do_get_CO2((int)NULL, (char**)NULL);
-    xTaskCreate(i2c_sensor_task, "i2c_sensor", 4 * 1024, NULL, 5, NULL);
+    xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 5, NULL);
+    xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 5, NULL);
 
 
 
-//  	if( flag_USE_W5500_Ethernet == 1 ) 
-	{
-		app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A / and ZE08
-	}
-
-	if( flag_IS_WEARABLE == 0 ) //Static Main
-	{
-		app_main_stella_uart2(); // send to CM4
-	}
 
 	// Below is Console
     esp_console_repl_t *repl = NULL;
@@ -1508,10 +2089,19 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_console_new_repl_usb_serial_jtag(&usbjtag_config, &repl_config, &repl));
 #endif
 
+//  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
     register_i2ctools();
+//  	#endif
 	register_stella_cmd();
 
 	set_fan_pwm();
+
+//  //  	#if ( USE_ESP_IDF_LIB_I2C == 1 ) 
+//      ESP_ERROR_CHECK(i2cdev_init_stella_i2c2_only()); // old driver  conflict
+//  //      E (1066) i2c: CONFLICT! driver_ng is not allowed to be used with this old driver
+//      xTaskCreate(task_sgp40, "sgp40", configMINIMAL_STACK_SIZE * 8, NULL, 5, NULL); // old driver  conflict
+//  //  	#endif
+
 
     printf("\n ==============================================================\n");
     printf(" |             Steps to Use i2c-tools                         |\n");

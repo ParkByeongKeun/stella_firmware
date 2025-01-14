@@ -1,0 +1,21 @@
+
+find . -name "*.[chsS]" >  cscope.files
+find . -name "*.cxx"   >> cscope.files
+find . -name "*.hxx"   >> cscope.files
+find . -name "*.cpp"   >> cscope.files
+find . -name "*.hpp"   >> cscope.files
+find . -name "Makefile"   >> cscope.files
+find . -name "*.mk"   >> cscope.files
+
+#find ../components  -name "*.[chsS]" >>  cscope.files
+#find ../components  -name "*.cxx"   >> cscope.files
+#find ../components  -name "*.hxx"   >> cscope.files
+#find ../components  -name "*.cpp"   >> cscope.files
+#find ../components  -name "*.hpp"   >> cscope.files
+#find ../components  -name "Makefile"   >> cscope.files
+#find ../components  -name "*.mk"   >> cscope.files
+
+
+ctags -R
+cscope -c -k
+#cscope -c 

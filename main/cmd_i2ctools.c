@@ -117,7 +117,8 @@ static int do_i2cdetect_cmd(int argc, char **argv)
         for (int j = 0; j < 16; j++) {
             fflush(stdout);
             address = i + j;
-            esp_err_t ret = i2c_master_probe(tool_bus_handle_i2c1, address, I2C_TOOL_TIMEOUT_VALUE_MS);
+//              esp_err_t ret = i2c_master_probe(tool_bus_handle_i2c1, address, I2C_TOOL_TIMEOUT_VALUE_MS);
+            esp_err_t ret = i2c_master_probe(tool_bus_handle_i2c2, address, I2C_TOOL_TIMEOUT_VALUE_MS);
             if (ret == ESP_OK) {
                 printf("%02x ", address);
             } else if (ret == ESP_ERR_TIMEOUT) {
@@ -180,7 +181,9 @@ static int do_i2cget_cmd(int argc, char **argv)
         .device_address = chip_addr,
     };
     i2c_master_dev_handle_t dev_handle;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK) {
+//      if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK)  //Main Board
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Sensor Board
+	{
         return 1;
     }
 
@@ -253,7 +256,9 @@ static int do_i2cset_cmd(int argc, char **argv)
         .device_address = chip_addr,
     };
     i2c_master_dev_handle_t dev_handle;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK) {
+//      if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Main Board
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Sensor Board
+	{
         return 1;
     }
 

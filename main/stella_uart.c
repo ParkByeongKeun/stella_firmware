@@ -397,9 +397,16 @@ int send_ZE08_data( struct _ZE08_CH2O_data *data )
 
 		if( flag_IS_WEARABLE == 0 ) //Static Main
 		{
+			
 			xSemaphoreTake(sema_uart2, portMAX_DELAY);
-			write(fd_uart2, my_json_string, strlen(my_json_string));
+			int ret = write(fd_uart2, my_json_string, strlen(my_json_string));
 			xSemaphoreGive(sema_uart2);
+			ESP_LOGI("ZE08 ppb    ", "write : fd_uart2 : ret=%d", ret);
+			ESP_LOGI("ZE08 ppb    ", "write : fd_uart2 : ret=%d", ret);
+			ESP_LOGI("ZE08 ppb    ", "write : fd_uart2 : ret=%d", ret);
+			ESP_LOGI("ZE08 ppb    ", "write : fd_uart2 : ret=%d", ret);
+			ESP_LOGI("ZE08 ppb    ", "write : fd_uart2 : ret=%d", ret);
+			ESP_LOGI("ZE08 ppb    ", "write : fd_uart2 : ret=%d", ret);
 		}
 		else
 		{
@@ -576,7 +583,7 @@ static void uart_select_task_uart1(void *arg)
 			xSemaphoreGive(sema_uart1);
 			vTaskDelay(5000 / portTICK_PERIOD_MS);
 		}
-		else if( (order % 2  == 1) && (flag_USE_W5500_Ethernet == 0) )  // ZE08
+		else if( ((order % 2  == 1) && (flag_USE_W5500_Ethernet == 0)) || ( flag_IS_WEARABLE == 0) )  // ZE08
 		{
 //  			uart_config = &uart_config_RS9A;
 			uart_mux_select(MUX_SEL_ZE08);
@@ -696,6 +703,9 @@ static void uart_select_task_uart1(void *arg)
 
 static void uart_select_task_uart2(void *arg) // receive 만 한다.
 {
+	ESP_LOGE("uart_select_task_uart2", "entered...............................");
+	ESP_LOGE("uart_select_task_uart2", "entered...............................");
+	ESP_LOGE("uart_select_task_uart2", "entered...............................");
 	
     while (1) 
 	{
@@ -713,9 +723,15 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
 
         if (s < 0) {
             ESP_LOGE("uart2", "Select failed: errno %d", errno);
+            ESP_LOGE("uart2", "Select failed: errno %d", errno);
+            ESP_LOGE("uart2", "Select failed: errno %d", errno);
             continue;
         } else if (s == 0) {
-            ESP_LOGI("uart2", "Timeout has been reached and nothing has been received");
+            ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
+            ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
+            ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
+            ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
+            ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
 			continue;
         } else {
             if (FD_ISSET(fd_uart2, &rfds)) 
@@ -734,10 +750,38 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
                 }
             } else {
                 ESP_LOGE("uart2", "No FD has been set in select()");
+                ESP_LOGE("uart2", "No FD has been set in select()");
+                ESP_LOGE("uart2", "No FD has been set in select()");
+                ESP_LOGE("uart2", "No FD has been set in select()");
+                ESP_LOGE("uart2", "No FD has been set in select()");
+                ESP_LOGE("uart2", "No FD has been set in select()");
+                ESP_LOGE("uart2", "No FD has been set in select()");
+                ESP_LOGE("uart2", "No FD has been set in select()");
                 continue;
             }
         }
     }
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
     ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
 
     vTaskDelete(NULL);
@@ -778,6 +822,8 @@ void app_main_stella_uart2(void)
 		ESP_LOGE(TAG, "Cannot open UART2");
 		vTaskDelay(5000 / portTICK_PERIOD_MS);
 	}
+	ESP_LOGW(TAG, "UART2 is opened fd_uart2=%d", fd_uart2);
+
 	
 	// We have a driver now installed so set up the read/write functions to use driver also.
 	uart_vfs_dev_use_driver(2);
