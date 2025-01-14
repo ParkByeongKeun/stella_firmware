@@ -1337,6 +1337,10 @@ void i2c1_sensor_task(void *arg)
 	while(1)
 	{
 		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		set_fan_pwm();
+		xSemaphoreGive(sema_i2c1);
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 		do_get_CO2((int)NULL, (char**)NULL);
 		xSemaphoreGive(sema_i2c1);
 
@@ -1434,8 +1438,10 @@ int get_SHT4x_cmd_resp(sht4x_t *dev, int cmd, sht4x_raw_data_t res, int len)
 			
 	    } else if (ret == ESP_ERR_TIMEOUT) {
 	        ESP_LOGW(TAG, "SHT4x I2C Bus is busy: Get Serial Num(Receive)");
+			memset((char *)res, 0, sizeof(sht4x_raw_data_t));
 	    } else {
 	        ESP_LOGW(TAG, "SHT4x I2C Read Failed: Get Serial Num(Receive)");
+			memset((char *)res, 0, sizeof(sht4x_raw_data_t));
 	    }
 	}
 
@@ -1483,7 +1489,8 @@ static esp_err_t send_cmd_sgp40(sgp40_t *dev, uint16_t cmd, uint16_t *data, size
 										2+words*3, 
 										I2C_TOOL_TIMEOUT_VALUE_MS);
 
-    if (i2c_master_bus_rm_device(dev_handle_i2c2) != ESP_OK) {
+    if (i2c_master_bus_rm_device(dev_handle_i2c2) != ESP_OK) 
+	{
         return -20;
     }
 //      return i2c_dev_write(dev, NULL, 0, buf, sizeof(buf));
@@ -1607,7 +1614,7 @@ int get_SGP40_cmd_resp(sgp40_t *dev, int cmd, uint16_t *data, int words, int wai
 	char i2c_cmd[2] ;
 	i2c_cmd[0] = (char)((cmd & 0xff00) >> 8);
 	i2c_cmd[1] = (char)((cmd & 0x00ff) >> 0);
-	hexdump3("SGP40 cmd packet", data, sizeof(data));
+	hexdump3("SGP40 cmd packet", i2c_cmd, sizeof(i2c_cmd));
     esp_err_t ret = i2c_master_transmit(dev_handle_i2c2, 
 	                                    (uint8_t *)i2c_cmd, 
 										2, 
@@ -1616,8 +1623,10 @@ int get_SGP40_cmd_resp(sgp40_t *dev, int cmd, uint16_t *data, int words, int wai
 	{
     } else if (ret == ESP_ERR_TIMEOUT) {
         ESP_LOGW("get_SGP40_Serial_num", "Bus is busy");
+		return -1;
     } else {
         ESP_LOGW("get_SGP40_Serial_num", "Read failed(transmit_receive)");
+		return -1;
     }
 
 //      vTaskDelay( wait_ms / portTICK_PERIOD_MS );
@@ -1783,6 +1792,8 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
 
 void i2c2_sensor_task(void *arg)
 {
+	int flag_SHT4x_is_OK = 0 ;
+	int flag_SGP40_is_OK = 0 ;
 	// 1. ZMOD reset : Power on시에는  0x32가 보이다가  
 	//                 바로 사라짐
 	ZMOD_Reset_GPIO(0);
@@ -1811,10 +1822,15 @@ void i2c2_sensor_task(void *arg)
 	// 3. SHT4x Serial_num
 	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
 
+		memset( resp, 0, sizeof(resp));
 		get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_SERIAL, resp, sizeof(resp));
 	    dev_sht4x.serial = ((uint32_t)resp[0] << 24) | ((uint32_t)resp[1] << 16) | ((uint32_t)resp[3] << 8) | resp[4];
 		ESP_LOGW(TAG, "SHT4x initilalized. Serial: %" PRIu32, dev_sht4x.serial);
 		get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_RESET, resp, 0);
+		if( dev_sht4x.serial != 0 )
+		{
+			flag_SHT4x_is_OK = 1 ; 
+		}
 
 	xSemaphoreGive(sema_i2c2);
 	
@@ -1826,6 +1842,12 @@ void i2c2_sensor_task(void *arg)
 	    ESP_LOGW(TAG, "SGP40 initilalized. Serial: %04X_%04X_%04X featureset 0x%04x",
 	            dev_sgp40.serial[0], dev_sgp40.serial[1], dev_sgp40.serial[2], dev_sgp40.featureset);
 
+		if(    ( dev_sgp40.serial[0] != 0 ) 
+		    || ( dev_sgp40.serial[1] != 0 )
+		    || ( dev_sgp40.serial[2] != 0 ) )
+		{
+			flag_SGP40_is_OK = 1 ; 
+		}
 		VocAlgorithm_init(&dev_sgp40.voc);
 		hexdump3("Voc Algo init data", &dev_sgp40.voc , sizeof(dev_sgp40.voc));
 //  		No need : sgp40 example does not execute SOFT)RESET
@@ -1838,24 +1860,77 @@ void i2c2_sensor_task(void *arg)
 
 	while(1)
 	{
-		// 4. 온습도
-		xSemaphoreTake(sema_i2c2, portMAX_DELAY);
-			get_SHT4x_cmd_resp(&dev_sht4x, get_meas_cmd(&dev_sht4x), resp, sizeof(resp));
-		xSemaphoreGive(sema_i2c2);
 
-    	sht4x_compute_values_shcho(resp, &temperature, &humidity);
-		ESP_LOGW("sht4x Sensor", " %.2f °C, %.2f %%\n", temperature, humidity);
+		if( flag_SHT4x_is_OK != 1 )
+		{
+			ESP_LOGE("SHT4x", "Serial Num is not valid");
+			// 3. SHT4x Serial_num
+			xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+		
+				memset( resp, 0, sizeof(resp));
+				get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_SERIAL, resp, sizeof(resp));
+			    dev_sht4x.serial = ((uint32_t)resp[0] << 24) | ((uint32_t)resp[1] << 16) | ((uint32_t)resp[3] << 8) | resp[4];
+				ESP_LOGW(TAG, "SHT4x initilalized. Serial: %" PRIu32 "(again)", dev_sht4x.serial);
+				get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_RESET, resp, 0);
+				if( dev_sht4x.serial != 0 )
+				{
+					flag_SHT4x_is_OK = 1 ; 
+				}
+		
+			xSemaphoreGive(sema_i2c2);
+		}
+	
+		if( flag_SGP40_is_OK != 1 )
+		{
+			ESP_LOGE("SGP40", "Serial Num is not valid");
+			// 3. SGP40 Serial_num -> get featureset --> init VocAlgorithm
+			xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+		
+				get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_SERIAL, dev_sgp40.serial, 3, SGP40_TIME_SERIAL);
+				get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_FEATURESET, &dev_sgp40.featureset, 1, SGP40_TIME_FEATURESET);
+			    ESP_LOGW(TAG, "SGP40 initilalized. Serial: %04X_%04X_%04X featureset 0x%04x",
+			            dev_sgp40.serial[0], dev_sgp40.serial[1], dev_sgp40.serial[2], dev_sgp40.featureset);
 
-		// 5. 온습도 --> VOC Index
-		int32_t voc_index;
-		xSemaphoreTake(sema_i2c2, portMAX_DELAY);
-			sgp40_measure_voc_shcho(&dev_sgp40, humidity, temperature, &voc_index);
-		xSemaphoreGive(sema_i2c2);
+				if(    ( dev_sgp40.serial[0] != 0 ) 
+				    || ( dev_sgp40.serial[1] != 0 )
+				    || ( dev_sgp40.serial[2] != 0 ) )
+				{
+					flag_SGP40_is_OK = 1 ; 
+				}
+				else
+				{
+				    ESP_LOGW(TAG, "SGP40 initilalized. Serial: %04X_%04X_%04X featureset 0x%04x ( invalid Serial_num )",
+				            dev_sgp40.serial[0], dev_sgp40.serial[1], dev_sgp40.serial[2], dev_sgp40.featureset);
+				}
+				VocAlgorithm_init(&dev_sgp40.voc);
+				hexdump3("Voc Algo init data again", &dev_sgp40.voc , sizeof(dev_sgp40.voc));
+		//  		No need : sgp40 example does not execute SOFT)RESET
+		//  		get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_SOFT_RESET, NULL, 0, SGP40_TIME_SOFT_RESET);
+		
+			xSemaphoreGive(sema_i2c2);
+		}
 
-		ESP_LOGI(TAG, "%.2f °C, %.2f %%, VOC index: %3" PRIi32 ", Air is [%s]",
-					temperature, humidity, voc_index, voc_index_name(voc_index));
-
-		do_rht_voc_report(&dev_sht4x, &dev_sgp40, temperature, humidity, voc_index );
+		if( flag_SHT4x_is_OK == 1 && flag_SGP40_is_OK == 1 )
+		{
+			// 4. 온습도
+			xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+				get_SHT4x_cmd_resp(&dev_sht4x, get_meas_cmd(&dev_sht4x), resp, sizeof(resp));
+			xSemaphoreGive(sema_i2c2);
+	
+	    	sht4x_compute_values_shcho(resp, &temperature, &humidity);
+			ESP_LOGW("sht4x Sensor", " %.2f °C, %.2f %%\n", temperature, humidity);
+	
+			// 5. 온습도 --> VOC Index
+			int32_t voc_index;
+			xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+				sgp40_measure_voc_shcho(&dev_sgp40, humidity, temperature, &voc_index);
+			xSemaphoreGive(sema_i2c2);
+	
+			ESP_LOGI(TAG, "%.2f °C, %.2f %%, VOC index: %3" PRIi32 ", Air is [%s]",
+						temperature, humidity, voc_index, voc_index_name(voc_index));
+	
+			do_rht_voc_report(&dev_sht4x, &dev_sgp40, temperature, humidity, voc_index );
+		}
 
 
        	vTaskDelay(10000 / portTICK_PERIOD_MS);
@@ -1900,6 +1975,28 @@ int Uart_mux_setup(int direction)
 
     return 1;
 }
+int gpio3_set_to_input_from_uart(void)
+{
+    gpio_config_t io_conf;
+
+    // detect Is it Wearable : Static은 Pull-up :10K GPIO_38(MIX_A0) / GPIO_39(MUX_A0)
+    //interrupt of rising edge
+    io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
+    //bit mask of the pins, use GPIO4/5 here
+    io_conf.pin_bit_mask = 3;
+    //set as input mode
+//      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
+//                          0 으로만 읽힌다.
+    io_conf.mode = GPIO_MODE_INPUT; //
+//      io_conf.mode = direction; //
+    //enable pull-up mode
+    io_conf.pull_up_en = 0; // 1 --> 0
+    io_conf.pull_down_en = 0; //NULL --> 0
+    gpio_config(&io_conf);
+
+    return 1;
+}
+
 
 int ZMOD_Reset_GPIO(int val)
 {
@@ -2010,6 +2107,7 @@ void app_main(void)
 
 	if( flag_IS_WEARABLE == 0 ) //Static Main
 	{
+		//CM4에 신고하기 위해서 가장 머너 Enable되어야 한다.
 		app_main_stella_uart2(); // send to CM4
 	}
 
@@ -2094,7 +2192,7 @@ void app_main(void)
 //  	#endif
 	register_stella_cmd();
 
-	set_fan_pwm();
+	set_fan_pwm(); //주기적으로 하자 ? 너무 빨리하면 Power On시에 FAN Controller가 나중에 Access되는 경우가 있다.
 
 //  //  	#if ( USE_ESP_IDF_LIB_I2C == 1 ) 
 //      ESP_ERROR_CHECK(i2cdev_init_stella_i2c2_only()); // old driver  conflict
