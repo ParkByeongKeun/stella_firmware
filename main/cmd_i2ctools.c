@@ -181,8 +181,8 @@ static int do_i2cget_cmd(int argc, char **argv)
         .device_address = chip_addr,
     };
     i2c_master_dev_handle_t dev_handle;
-//      if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK)  //Main Board
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Sensor Board
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK)  //Main Board
+//      if (i2c_master_bus_add_device(tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Sensor Board
 	{
         return 1;
     }
@@ -256,8 +256,8 @@ static int do_i2cset_cmd(int argc, char **argv)
         .device_address = chip_addr,
     };
     i2c_master_dev_handle_t dev_handle;
-//      if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Main Board
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Sensor Board
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Main Board
+//      if (i2c_master_bus_add_device(tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle) != ESP_OK)  // Sensor Board
 	{
         return 1;
     }

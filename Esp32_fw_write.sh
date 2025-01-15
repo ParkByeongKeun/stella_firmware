@@ -11,23 +11,13 @@ fi
 
 filename=$1
 
-uart_dev=COMxx   # at windows
-#uart_dev=/dev/ttyUSB0 # at CM4
-#
-echo "esptool.py -p $uart_dev \
--b 460800 \
---before default_reset \
---after hard_reset \
---chip esp32s3 \
-write_flash \
---flash_mode dio \
---flash_size detect \
---flash_freq 40m \
-0x0000  build/bootloader/bootloader.bin \
-0x8000  build/partition_table/partition-table.bin \
-0x10000 $filename"
-
-esptool.py -p $uart_dev \
+echo ""
+echo "	UART1 set to GPIO for ESP32 Programming'"
+echo "			raspi-gpio set 4,5 ip"
+echo ""
+raspi-gpio set 4,5 ip
+raspi-gpio get 4,5 
+esptool.py -p /dev/ttyUSB0 \
             -b 460800 \
             --before default_reset \
             --after hard_reset \
@@ -41,4 +31,10 @@ esptool.py -p $uart_dev \
             0x10000 $filename
 
 #          0x10000 build/hello_world.bin
+echo ""
+echo "	UART1 set to UART again'"
+echo "			raspi-gpio set 4,5 a4"
+echo ""
+raspi-gpio set 4,5 a4
+raspi-gpio get 4,5 
 

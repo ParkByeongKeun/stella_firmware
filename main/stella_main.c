@@ -40,6 +40,7 @@
 #include <ets_sys.h>
 
 #include "stella_global.h"
+#include "i2s_pdm_example.h"
 
 #define STORAGE_NAMESPACE "storage"
 
@@ -51,6 +52,7 @@ SemaphoreHandle_t sema_i2c2 = NULL;
 SemaphoreHandle_t sema_uart1 = NULL;
 SemaphoreHandle_t sema_uart2 = NULL;
 SemaphoreHandle_t sema_tcp = NULL;
+SemaphoreHandle_t sema_spi_ads114s = NULL;
 
 static const char *TAG = "i2c-tools";
 static uint32_t i2c_frequency = 100 * 1000;
@@ -782,7 +784,7 @@ int do_fan_report(void)
 
 	int len = 1 ;
 	//  i2cget -c 0x2f -r 0x30 -l 1
-	int data_addr = 0x30; 
+	int data_addr = 0x30;
 
     i2c_device_config_t i2c_dev_conf = {
         .scl_speed_hz = i2c_frequency,
@@ -796,20 +798,93 @@ int do_fan_report(void)
 
 	char val;
 	char *mode = "PWM Duty";
-    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&data_addr, 1, 
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&data_addr, 1,
 	                                 (uint8_t *)&val, len, I2C_TOOL_TIMEOUT_VALUE_MS);
-//  	float val_percent = floorf((( val * 100.0 )+0.5) / 255.0) ; 
-	float val_percent = ceil( ( val * 100.0 ) / 255.0) ; 
+//  	float val_percent = floorf((( val * 100.0 )+0.5) / 255.0) ;
+	float val_percent = ceil( ( val * 100.0 ) / 255.0) ;
 	ESP_LOGI("FAN", "fan val=%02x(percent = %3f)\n", val, val_percent);
+
+    if (ret == ESP_OK)
+	{
+	    ESP_LOGI(JSON_TAG, "Serialize.....Fan");
+	    cJSON *root;
+	   	root = cJSON_CreateObject();
+    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+	   	cJSON_AddStringToObject(root, "FAN_Mode",   mode);
+	   	cJSON_AddNumberToObject(root, "FAN_PWM_percent",  val_percent);
+
+	    char *my_json_string = cJSON_Print(root);
+
+	   	ESP_LOGI("FAN", "my_json_string\n%s",my_json_string);
+		if( flag_IS_WEARABLE == 0 ) //Static Main
+		{
+			xSemaphoreTake(sema_uart2, portMAX_DELAY);
+			write(fd_uart2, my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_uart2);
+		}
+		else // Wearable Main
+		{
+			xSemaphoreTake(sema_tcp, portMAX_DELAY);
+			send_to_server(my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_tcp);
+		}
+	   	cJSON_Delete(root);
+    }
+	else if (ret == ESP_ERR_TIMEOUT)
+	{
+        ESP_LOGW(TAG, "Bus is busy");
+    }
+	else
+	{
+        ESP_LOGW(TAG, "Read failed");
+    }
+
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+        return 1;
+    }
+
+	return 0;
+	// ===========================================
+
+}
+
+int do_get_als(void)
+{
+//  	// FAN Controller Resigter Read
+//  	int chip_addr = FAN_CTRL_I2C_DEV_ADDR;
+
+//  	int len = 1 ;
+	//  i2cget -c 0x29 -r 0x04 -l 2
+	uint8_t command = 0x04; 
+
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = i2c_frequency,
+        .device_address = LIGHT_SENSOR_I2C_DEV_ADDR,
+    };
+
+	i2c_master_dev_handle_t dev_handle_i2c1;
+	if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
+		return 1;
+	}
+
+	uint16_t val;
+	float lux_f;
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&command, 1, 
+	                                 (uint8_t *)&val, 2, I2C_TOOL_TIMEOUT_VALUE_MS);
+	ESP_LOGI("ALS", " val=%04x(%d)\n", val, val);
+//  	lux_f = 0.2048*val; // 50mse integration time
+	lux_f = 0.0256*val; // 50mse integration time
 
     if (ret == ESP_OK) 
 	{
 	    ESP_LOGI(JSON_TAG, "Serialize.....Fan");
 	    cJSON *root;
 	   	root = cJSON_CreateObject();
-	   	cJSON_AddStringToObject(root, "FAN_Mode",   mode);
-	   	cJSON_AddNumberToObject(root, "FAN_PWM_percent",  val_percent);
-	
+    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+
+		char tmp_str[10];
+    	sprintf(tmp_str, "%.2f", (float)(lux_f));
+	   	cJSON_AddNumberToObject(root, "ALS_lux",   atof(tmp_str));
 	    char *my_json_string = cJSON_Print(root);
 	
 	   	ESP_LOGI("FAN", "my_json_string\n%s",my_json_string);
@@ -1320,19 +1395,119 @@ PM2008_data_retry:
     return 0;
 }
 
+struct _als_conf
+{
+	uint16_t resv:3;
+	uint16_t SENS:1;
+	uint16_t DG:1;
+	uint16_t GAIN:1;
+	uint16_t ALS_IT:4;
+	uint16_t ALS_PERS:2;
+	uint16_t INT_Ch:1;
+	uint16_t CHAN_EN:1;
+	uint16_t INT_EN:1;
+	uint16_t SD:1;
+}__attribute__((packed));
+
+static esp_err_t als_conf_set(int it_time_ms )
+{
+//  	struct _als_conf als_conf;
+	uint8_t buf[3];
+
+	buf[0] = 0x00; // command : ALS_CONF_0
+
+//  	memset((char*)&als_conf, 0, sizeof(als_conf));
+//  
+//  	als_conf.resv = 7; //low sensitivity (0: high sensitivity)
+//  	als_conf.SENS = 1; //low sensitivity (0: high sensitivity)
+//  	als_conf.DG   = 0; // Normal (1: Double Gain) ??
+//  	als_conf.GAIN = 0; // Normal (1: Double Gain) ??
+	switch(it_time_ms)
+	{
+//  		case  25 : als_conf.ALS_IT=12; break; // 1100
+//  		case  50 : als_conf.ALS_IT=8; break;  // 1000
+//  		case 100 : als_conf.ALS_IT=0; break;  // 0000
+//  		case 200 : als_conf.ALS_IT=1; break;  // 0001
+//  		case 400 : als_conf.ALS_IT=3; break;  // 0010
+//  		case 800 : als_conf.ALS_IT=3; break;  // 0011
+//  		default:
+//  			ESP_LOGE("als_set", "Invalid integration Time set to 25msec ( 25,50,100,200,400,800 )");
+//  			als_conf.ALS_IT=0xC;
+//  			break;
+		case  25 : buf[1] = 0x13; buf[2] = 0x04; break;  // 1100
+		case  50 : buf[1] = 0x12; buf[2] = 0x04; break;  // 1000
+		case 100 : buf[1] = 0x10; buf[2] = 0x04; break;  // 0000
+		case 200 : buf[1] = 0x10; buf[2] = 0x44; break;  // 0001
+		case 400 : buf[1] = 0x10; buf[2] = 0x84; break;  // 0010
+		case 800 : buf[1] = 0x10; buf[2] = 0xC4; break;  // 0011
+	}
+//  	als_conf.ALS_PERS = 0; // Interrupt persistent 0:1 / 1:2 ...
+//  	als_conf.INT_Ch   = 0; // ALS or WHITE
+//  	als_conf.CHAN_EN  = 1; // ALS or ALS+WHITE
+//  	als_conf.INT_EN   = 0; // Int Disable 
+//  	als_conf.SD       = 0; // Power On 
+
+		buf[1] = 0x1C; buf[2] = 0x04; // SENS=1 DG=1 GAIN=1 it=100ms
+
+    // add command
+    i2c_device_config_t i2c_dev_conf = {
+//          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+        .scl_speed_hz = 100000 , // 100KHz //i2c_frequency,
+        .device_address = LIGHT_SENSOR_I2C_DEV_ADDR, //조도센서 
+    };
+
+//  	uint16_t tmp;
+//  	memcpy((char *)&tmp, (char *)&als_conf, 2); 
+//  	buf[0] = 0x00;
+//  	buf[1] = ((tmp>>0) & 0x00ff);
+//  	buf[2] = ((tmp>>8) & 0x00ff);
+
+//  	hexdump3("als_conf0", &als_conf, sizeof(als_conf));
+	hexdump3("buf", buf, sizeof(buf));
+
+    i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device( tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) { return 1; }
+
+    esp_err_t ret = i2c_master_transmit(dev_handle_i2c1, 
+	                                    (uint8_t *)buf, 
+										3, 
+										I2C_TOOL_TIMEOUT_VALUE_MS);
+
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) 
+	{
+        return -20;
+    }
+//      return i2c_dev_write(dev, NULL, 0, buf, sizeof(buf));
+    return ret;
+
+}
+
+
+
+
+
+
 
 
 void i2c1_sensor_task(void *arg)
 {
 	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 
-	set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
-	set_PM2008_mode(PM2008_CMD_SETUP_CONTINUOUS, 0xffff);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-//  	set_PM2008_mode(PM2008_CMD_SETUP_TIMING_MEASURE, 180);
-//      vTaskDelay(2000 / portTICK_PERIOD_MS);
+		set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);
+	    vTaskDelay(5000 / portTICK_PERIOD_MS);
+		set_PM2008_mode(PM2008_CMD_SETUP_CONTINUOUS, 0xffff);
+	    vTaskDelay(2000 / portTICK_PERIOD_MS);
+	//  	set_PM2008_mode(PM2008_CMD_SETUP_TIMING_MEASURE, 180);
+	//      vTaskDelay(2000 / portTICK_PERIOD_MS);
 	xSemaphoreGive(sema_i2c1);
+
+
+	// ALS ( Ambient Light Sensor : Conf : integration 25msec )
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		als_conf_set(50); //이것을 무시하고 // SENS=1 DG=1 GAIN=1 it=100ms
+	xSemaphoreGive(sema_i2c1);
+
+
 	
 	while(1)
 	{
@@ -1352,6 +1527,10 @@ void i2c1_sensor_task(void *arg)
 
 		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 		do_fan_report(); // register 를 읽어서 보냄 mode는 "PWM duty"로 고정
+		xSemaphoreGive(sema_i2c1);
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		do_get_als(); // 
 		xSemaphoreGive(sema_i2c1);
 
        	vTaskDelay(10000 / portTICK_PERIOD_MS);
@@ -1475,7 +1654,8 @@ static esp_err_t send_cmd_sgp40(sgp40_t *dev, uint16_t cmd, uint16_t *data, size
     ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, sizeof(buf), ESP_LOG_VERBOSE);
 
     i2c_device_config_t i2c_dev_conf = {
-        .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+//          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+        .scl_speed_hz = 100000 , // 100KHz //i2c_frequency,
         .device_address = dev->i2c_dev.addr,
     };
 	ESP_LOGW("get_SGP40_cmd_resp", "chip_addr=%02x, words=%d, cmd=%04x", dev->i2c_dev.addr, words, cmd);
@@ -1503,7 +1683,8 @@ static esp_err_t read_resp_sgp40(sgp40_t *dev, uint16_t *data, size_t words)
     uint8_t buf[words * 3];
 
     i2c_device_config_t i2c_dev_conf = {
-        .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+//          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+        .scl_speed_hz = 100000 , // 100KHz //i2c_frequency,
         .device_address = dev->i2c_dev.addr,
     };
 	ESP_LOGW("read_resp_sgp40", "chip_addr=%02x, words=%d", dev->i2c_dev.addr, words);
@@ -1598,7 +1779,8 @@ int get_SGP40_cmd_resp(sgp40_t *dev, int cmd, uint16_t *data, int words, int wai
 	uint8_t sgp40_resp[10*3];
 
     i2c_device_config_t i2c_dev_conf = {
-        .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+//          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
+        .scl_speed_hz = 100000 , // 100KHz //i2c_frequency,
         .device_address = dev->i2c_dev.addr,
     };
 	ESP_LOGW("get_SGP40_cmd_resp", "chip_addr=%02x, words=%d, cmd=%04x", dev->i2c_dev.addr, words, cmd);
@@ -2006,7 +2188,7 @@ int ZMOD_Reset_GPIO(int val)
     //interrupt of rising edge
     io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
     //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = GPIO_ZMOD_RESET;
+    io_conf.pin_bit_mask = GPIO_ZMOD_RESET; // 45
     //set as input mode
 //      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
 //                          0 으로만 읽힌다.
@@ -2043,6 +2225,7 @@ void app_main(void)
 	sema_uart1 = xSemaphoreCreateBinary();
 	sema_uart2 = xSemaphoreCreateBinary();
 	sema_tcp = xSemaphoreCreateBinary();
+	sema_spi_ads114s = xSemaphoreCreateBinary();
 
 	xSemaphoreGive(sema_i2c1);
 //  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
@@ -2051,6 +2234,7 @@ void app_main(void)
 	xSemaphoreGive(sema_uart1);
 	xSemaphoreGive(sema_uart2);
 	xSemaphoreGive(sema_tcp);
+	xSemaphoreGive(sema_spi_ads114s);
 
 	// 0. ---- LED ctrl
     xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);
@@ -2107,11 +2291,11 @@ void app_main(void)
 
 	if( flag_IS_WEARABLE == 0 ) //Static Main
 	{
-		//CM4에 신고하기 위해서 가장 머너 Enable되어야 한다.
+		//CM4에 신고하기 위해서 가장 먼저 Enable되어야 한다.
 		app_main_stella_uart2(); // send to CM4
 	}
 
-//  	if( flag_USE_W5500_Ethernet == 1 ) 
+	if( flag_USE_W5500_Ethernet == 1 ) 
 	{
 		app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A / and ZE08
 	}
@@ -2154,13 +2338,19 @@ void app_main(void)
 //  	//맨 마직막 device_address로만 설정된다. // 그래서 그때그때 다시 설정해야 한다.
 //  	ESP_ERROR_CHECK(i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1));
 
-//  for UART2 Debugging : CM4와 연결된 ttyAMA3이 Enable되면 ESP32 Program을 할 수 없음 / monitoring은 됨
-//  	I2C thread
-//  	do_get_CO2((int)NULL, (char**)NULL);
+//  //  for UART2 Debugging : CM4와 연결된 ttyAMA3이 Enable되면 ESP32 Program을 할 수 없음 / monitoring은 됨
+//  //  	I2C thread
+//  //  	do_get_CO2((int)NULL, (char**)NULL);
+
     xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 5, NULL);
-    xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 5, NULL);
+//  	// i2c2_sensor_task를 실행하면 i2s_dpm Buffer가 고정된값으로만 읽힌다.
+    xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL);
 
-
+//  	i2c2_sensor_task를 실행하면 I2S read buffer에 같은 값만 찍힌다.
+//  	printf("I2S PDM RX example start\n---------------------------\n");
+//  	xTaskCreate(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, NULL); // + 2048
+//  	TaskHandle_t pdm_rx_task;
+//  	xTaskCreatePinnedToCore(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, &pdm_rx_task, 1);
 
 
 	// Below is Console
