@@ -43,6 +43,7 @@
 #include "i2s_pdm_example.h"
 
 #define STORAGE_NAMESPACE "storage"
+static int count_CO2_ppm_valid = 0;
 
 // During Cert(PM2008, CM1106, RS9A) : Sensor Connection Used for W5500
 
@@ -56,6 +57,7 @@ SemaphoreHandle_t sema_spi_ads114s = NULL;
 
 static const char *TAG = "i2c-tools";
 static uint32_t i2c_frequency = 100 * 1000;
+int flag_CO2_autozero_close_run = 0;
 //  static uint32_t i2c_frequency = 100 * 1000;
 #define I2C_TOOL_TIMEOUT_VALUE_MS (50)
 
@@ -113,6 +115,7 @@ extern void app_main_led_strip_ctrl(void *arg) ;//나중에 R/G/B/W로 변경하
 extern void tcp_client_task(void* arg);
 extern int send_to_server(char *payload, int len);
 extern void app_main_task_oled(void *arg);
+extern void app_main_tcp_server(int port);
 
 static int do_esp32_fan_ctrl(int argc, char **argv) ;
 
@@ -139,6 +142,8 @@ static i2c_port_t i2c_port_i2c2 = I2C_NUM_1;
 #define SHT40_SENSOR_I2C_DEV_ADDR	0x44 // I2C2
 #define SGP40_SENSOR_I2C_DEV_ADDR	0x59 // I2C2
 
+#define STR_MATCH	(0)
+
 
 int CO2_ppm;
 #define CO2_STATUS_NORMAL	(0x00)
@@ -163,6 +168,25 @@ struct _CO2_sn_packet
 	uint16_t digit_1;
 	char cks;
 }__attribute__((packed));
+
+struct _CO2_cali_resp 
+{
+	char cmd;
+	uint16_t digit_1;
+	char cks;
+}__attribute__((packed));
+
+struct _CO2_autozero_resp 
+{
+	char cmd;
+	uint8_t wrong_code;
+	uint8_t zero_set;
+	uint8_t cali_days;
+	uint16_t cali_ppm;
+	uint8_t resv;
+	char cks;
+}__attribute__((packed));
+
 uint8_t my_mac_factory[20];
 char my_mac_str[32];
 
@@ -567,6 +591,233 @@ CO2_get_SW_ver_retry :
         return -20;
     }
 	return 0;
+}
+
+int do_CO2_autozero(int argc, char **argv)
+{
+	struct _CO2_autozero_resp CO2_autozero_resp;
+	int len = sizeof(CO2_autozero_resp) ;// 고정:12
+	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
+
+//  	req  : 0x03 [DF1] [DF0]
+//  	resp :0x03 [DF1] [DF0] [CS]
+//
+	#define CO2_AUTOZERO_COMMAND	(0x10)
+	uint16_t tmp_u16 = 0;
+	int8_t cks = 0;
+	uint8_t tmp_req[7];
+	tmp_req[0] = CO2_AUTOZERO_COMMAND;
+	tmp_req[1] = 100; //wrong code
+	if( strncmp(argv[1], "open", strlen("open")) ==  STR_MATCH )
+	{
+		tmp_req[2] = 0; 
+	}
+	else
+	{
+		tmp_req[2] = 2; 
+	}
+	tmp_req[3] = atoi(argv[2]); //wrong code
+	tmp_u16 = atoi(argv[3]);    
+	tmp_req[4] = (tmp_u16 & 0xff00) >> 8; // ppm
+	tmp_req[5] = (tmp_u16 & 0x00ff) >> 0; // ppm
+	tmp_req[6] = 100; 
+
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = i2c_frequency,
+        .device_address = chip_addr,
+    };
+
+	ESP_LOGW("do_CO2_autozero", "			wait for sema_i2c until taken");
+	ESP_LOGW("do_CO2_autozero", "			wait for sema_i2c until taken");
+	ESP_LOGW("do_CO2_autozero", "			wait for sema_i2c until taken");
+	ESP_LOGW("do_CO2_autozero", "			wait for sema_i2c until taken");
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+	ESP_LOGW("do_CO2_autozero", "take sema_i2c during CO2 autozero");
+	ESP_LOGW("do_CO2_autozero", "take sema_i2c during CO2 autozero");
+	ESP_LOGW("do_CO2_autozero", "take sema_i2c during CO2 autozero");
+	ESP_LOGW("do_CO2_autozero", "take sema_i2c during CO2 autozero");
+
+    i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) 
+	{
+		xSemaphoreGive(sema_i2c1);
+        return 1;
+    }
+
+	int loop_count = 0 ;
+CO2_autozero_retry :
+	memset((char *)&CO2_autozero_resp, 0, sizeof(CO2_autozero_resp));
+//  	dev_handle_i2c1->device_address = CM1106_CO2_I2C_DEV_ADDR; // Error
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&tmp_req, 7, 
+	                                 (uint8_t *)&CO2_autozero_resp, len, I2C_TOOL_TIMEOUT_VALUE_MS);
+    if (ret == ESP_OK) 
+	{
+		hexdump3("CO2_autozero_resp:", (char *)&CO2_autozero_resp, len);
+		if ( CO2_autozero_resp.cmd != CO2_AUTOZERO_COMMAND  )
+		{
+			ESP_LOGW("shcho", "CM1106 reply old cmd: retry again( sleep 2) cmd 0x03(auto cali)");
+			loop_count++;
+
+			if( loop_count > 20 )
+			{
+				ESP_LOGW("shcho", "CM1106 retry timeout : return -1");
+				xSemaphoreGive(sema_i2c1);
+				return -1;
+			}
+
+        	vTaskDelay(2000 / portTICK_PERIOD_MS);
+			goto CO2_autozero_retry;
+		}
+
+		cks = calc_CO2_cks((uint8_t *)&CO2_autozero_resp, len);
+		if( (char)cks != (char)CO2_autozero_resp.cks )
+		{
+			ESP_LOGE("shcho", "get_CO2_autozero cks differ(0x%02x vs. 0x%02x)", (char)cks, CO2_autozero_resp.cks);
+		}
+		else
+		{
+			ESP_LOGW("CO2_autozero", "auto_autozero_success :%d : wait 5 secs", htons(CO2_autozero_resp.cali_ppm));
+        	vTaskDelay(5000 / portTICK_PERIOD_MS);
+			xSemaphoreGive(sema_i2c1);
+			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run");
+			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run");
+			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run");
+			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run");
+			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run\n\n\n");
+			return 0;
+		}
+
+    } else if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "Bus is busy");
+    } else {
+        ESP_LOGW(TAG, "Read failed");
+    }
+//      free(data);
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+		xSemaphoreGive(sema_i2c1);
+        return -20;
+    }
+	xSemaphoreGive(sema_i2c1);
+	return 0;
+}
+
+static int  register_CO2_autozero()
+{
+    const esp_console_cmd_t cmd = {
+        .command = "co2-autozero",
+        .help = "co2-autozero [open|close] [ 1 ~ 15 (days)] [400 ~ 1500(ppm)]",
+        .hint = NULL,
+        .func = do_CO2_autozero,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+    return 0;
+}
+
+int do_CO2_calibration(int argc, char **argv)
+{
+	struct _CO2_cali_resp CO2_cali_resp;
+	int len = sizeof(CO2_cali_resp) ;// 고정:12
+	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
+
+//  	req  : 0x03 [DF1] [DF0]
+//  	resp :0x03 [DF1] [DF0] [CS]
+//
+	uint16_t tmp_u16 = atoi(argv[1]);
+	int8_t cks = 0;
+	uint8_t tmp_req[3];
+	tmp_req[0] = 0x03;
+	tmp_req[1] = (tmp_u16 & 0xff00) >> 8;
+	tmp_req[2] = (tmp_u16 & 0x00ff) >> 0;
+
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = i2c_frequency,
+        .device_address = chip_addr,
+    };
+
+	ESP_LOGW("do_CO2_calibration", "			wait for sema_i2c until taken");
+	ESP_LOGW("do_CO2_calibration", "			wait for sema_i2c until taken");
+	ESP_LOGW("do_CO2_calibration", "			wait for sema_i2c until taken");
+	ESP_LOGW("do_CO2_calibration", "			wait for sema_i2c until taken");
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+	ESP_LOGW("do_CO2_calibration", "take sema_i2c during CO2 Calibration");
+	ESP_LOGW("do_CO2_calibration", "take sema_i2c during CO2 Calibration");
+	ESP_LOGW("do_CO2_calibration", "take sema_i2c during CO2 Calibration");
+	ESP_LOGW("do_CO2_calibration", "take sema_i2c during CO2 Calibration");
+
+    i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) 
+	{
+		xSemaphoreGive(sema_i2c1);
+        return 1;
+    }
+
+	int loop_count = 0 ;
+CO2_cali_retry :
+	memset((char *)&CO2_cali_resp, 0, sizeof(CO2_cali_resp));
+//  	dev_handle_i2c1->device_address = CM1106_CO2_I2C_DEV_ADDR; // Error
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&tmp_req, 3, 
+	                                 (uint8_t *)&CO2_cali_resp, len, I2C_TOOL_TIMEOUT_VALUE_MS);
+    if (ret == ESP_OK) 
+	{
+		hexdump3("CO2_cali_resp:", (char *)&CO2_cali_resp, len);
+		if ( CO2_cali_resp.cmd != 0x03  )
+		{
+			ESP_LOGW("shcho", "CM1106 reply old cmd: retry again( sleep 2) cmd 0x03(auto cali)");
+			loop_count++;
+
+			if( loop_count > 20 )
+			{
+				ESP_LOGW("shcho", "CM1106 retry timeout : return -1");
+				xSemaphoreGive(sema_i2c1);
+				return -1;
+			}
+
+        	vTaskDelay(2000 / portTICK_PERIOD_MS);
+			goto CO2_cali_retry;
+		}
+
+		cks = calc_CO2_cks((uint8_t *)&CO2_cali_resp, len);
+		if( (char)cks != (char)CO2_cali_resp.cks )
+		{
+			ESP_LOGE("shcho", "set CO2_cali cks differ(0x%02x vs. 0x%02x)", (char)cks, CO2_cali_resp.cks);
+		}
+		else
+		{
+			ESP_LOGW("CO2_cali", "cali_success :%d : wait 5 secs", htons(CO2_cali_resp.digit_1));
+        	vTaskDelay(5000 / portTICK_PERIOD_MS);
+			xSemaphoreGive(sema_i2c1);
+			ESP_LOGW("CO2_cali", "               other i2c1 task will be run");
+			ESP_LOGW("CO2_cali", "               other i2c1 task will be run");
+			ESP_LOGW("CO2_cali", "               other i2c1 task will be run");
+			ESP_LOGW("CO2_cali", "               other i2c1 task will be run");
+			ESP_LOGW("CO2_cali", "               other i2c1 task will be run\n\n\n");
+			return 0;
+		}
+
+    } else if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "Bus is busy");
+    } else {
+        ESP_LOGW(TAG, "Read failed");
+    }
+//      free(data);
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+		xSemaphoreGive(sema_i2c1);
+        return -20;
+    }
+	xSemaphoreGive(sema_i2c1);
+	return 0;
+}
+
+static int  register_CO2_cali()
+{
+    const esp_console_cmd_t cmd = {
+        .command = "co2-cali",
+        .help = "co2 cali  ( 400 ~ 1500)ppm",
+        .hint = NULL,
+        .func = do_CO2_calibration,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+    return 0;
 }
 
 
@@ -1131,6 +1382,7 @@ struct _PM2008_set_mode
 	char cks ;
 }__attribute__((packed));
 
+
 int send_CM1106_data( struct _CO2_ppm_packet *data )
 {
 	if( data->status == 0 )
@@ -1160,6 +1412,9 @@ int send_CM1106_data( struct _CO2_ppm_packet *data )
 			xSemaphoreGive(sema_tcp);
 		}
     	cJSON_Delete(root);
+
+
+		count_CO2_ppm_valid ++;
 	}
 	else
 	{
@@ -1533,7 +1788,26 @@ void i2c1_sensor_task(void *arg)
 		do_get_als(); // 
 		xSemaphoreGive(sema_i2c1);
 
+		if( ((count_CO2_ppm_valid % 100) == 0) && ( flag_CO2_autozero_close_run != 0 ) )
+		{
+//  			char close[]="close";
+//  			char cali_day = "15";
+//  			char cali_ppm="400";
+			int argc = 4;
+			char *argv[4] = { "imsi", "close", "15", "400"} ;
+//  			argv[1] = close;
+//  			argv[2] = cali_day;
+//  			argv[3] = cali_ppm;
+
+			//내부에서 Sema Take하고 Release를 한다.
+			do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
+		}
+
        	vTaskDelay(10000 / portTICK_PERIOD_MS);
+
+
+
+
 	}
 }
 
@@ -2133,6 +2407,8 @@ void register_stella_cmd(void)
 	register_nvs_get_str();
 	register_nvs_set_str();
 	register_fan_ctrl();
+	register_CO2_cali();
+	register_CO2_autozero();
 
 }
 
@@ -2218,6 +2494,7 @@ void app_main(void)
 	ESP_LOGW("system", "my mac(factory) : %s\n", my_mac_str);
 
 
+
 	sema_i2c1 = xSemaphoreCreateBinary();
 //  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
 	sema_i2c2 = xSemaphoreCreateBinary();
@@ -2270,6 +2547,26 @@ void app_main(void)
 		    ESP_ERROR_CHECK(example_connect());
 	//      	tcp_client(); // org : OK shcho
 	//      	xTaskCreate(tcp_client_task, "tcp_client", 4 * 1024, NULL, 5, NULL); // OK shcho // It is Just Test
+	
+
+
+	    	char listen_port_str[100];
+			int listen_port = 0 ;
+			memset(listen_port_str, 0, sizeof(listen_port_str));
+			ijoon_get_nvs_str((uint8_t*)"listenoort", (uint8_t*)listen_port_str);
+			if( listen_port_str[0] == 0 )
+			{
+				ESP_LOGW("nvs_relate", "set_nvs_str listenport 33333 (example)");
+				ESP_LOGW("nvs_relate", "set_nvs_str listenport 33333 (example)");
+				ESP_LOGW("nvs_relate", "set_nvs_str listenport 33333 (example)");
+				listen_port  = CONFIG_EXAMPLE_SERVER_PORT;
+			}
+			else
+			{
+				listen_port  = atoi(listen_port_str);
+			}
+	
+			app_main_tcp_server(listen_port);
 		}
 
     }
@@ -2280,6 +2577,21 @@ void app_main(void)
         Uart_mux_setup(GPIO_MODE_OUTPUT);
     }
 	//--------------------------------------------------------------
+	char tmp_buf[10];
+	memset(tmp_buf, 0, sizeof(tmp_buf));
+	ijoon_get_nvs_str((uint8_t*)"autozero-close", (uint8_t*)tmp_buf);
+	if( tmp_buf[0] == 0 )
+	{
+		ESP_LOGW("nvs_relate", "set_nvs_str autozero-close 1 : autozero를 하지 못하게 주기적으로 close함");
+		ESP_LOGW("nvs_relate", "                             : 이름이 길어서 저장되자 않기 때문애 줄임");
+		ESP_LOGW("nvs_relate", "set_nvs_str autozero-close 0 : autozero를 close packet를 보내지 않음");
+		ESP_LOGW("nvs_relate", "                             : 이름이 길어서 저장되자 않기 때문애 줄임");
+		flag_CO2_autozero_close_run = 0;
+	}
+	else
+	{
+		flag_CO2_autozero_close_run = atoi(tmp_buf);
+	}
 	
     if ( flag_IS_WEARABLE == 1 )
 	{
@@ -2288,6 +2600,7 @@ void app_main(void)
 		app_main_task_oled(NULL);
        	vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
+	//--------------------------------------------------------------
 
 	if( flag_IS_WEARABLE == 0 ) //Static Main
 	{
@@ -2343,8 +2656,10 @@ void app_main(void)
 //  //  	do_get_CO2((int)NULL, (char**)NULL);
 
     xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 5, NULL);
-//  	// i2c2_sensor_task를 실행하면 i2s_dpm Buffer가 고정된값으로만 읽힌다.
-    xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL);
+
+//  //  	// i2c2_sensor_task를 실행하면 i2s_dpm Buffer가 고정된값으로만 읽힌다.
+//          // UART2도 동작하지 않나. GPIO3 --> GPIO8로 변경하면 동작하는데(GPIO3은 Input으로 하고, Jumper연결)
+//      xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL);
 
 //  	i2c2_sensor_task를 실행하면 I2S read buffer에 같은 값만 찍힌다.
 //  	printf("I2S PDM RX example start\n---------------------------\n");

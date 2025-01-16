@@ -724,14 +724,14 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
         if (s < 0) {
             ESP_LOGE("uart2", "Select failed: errno %d", errno);
             ESP_LOGE("uart2", "Select failed: errno %d", errno);
-            ESP_LOGE("uart2", "Select failed: errno %d", errno);
+//              ESP_LOGE("uart2", "Select failed: errno %d", errno);
             continue;
         } else if (s == 0) {
             ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
             ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
-            ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
-            ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
-            ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
+//              ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
+//              ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
+//              ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
 			continue;
         } else {
             if (FD_ISSET(fd_uart2, &rfds)) 
@@ -751,38 +751,38 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
             } else {
                 ESP_LOGE("uart2", "No FD has been set in select()");
                 ESP_LOGE("uart2", "No FD has been set in select()");
-                ESP_LOGE("uart2", "No FD has been set in select()");
-                ESP_LOGE("uart2", "No FD has been set in select()");
-                ESP_LOGE("uart2", "No FD has been set in select()");
-                ESP_LOGE("uart2", "No FD has been set in select()");
-                ESP_LOGE("uart2", "No FD has been set in select()");
-                ESP_LOGE("uart2", "No FD has been set in select()");
+//                  ESP_LOGE("uart2", "No FD has been set in select()");
+//                  ESP_LOGE("uart2", "No FD has been set in select()");
+//                  ESP_LOGE("uart2", "No FD has been set in select()");
+//                  ESP_LOGE("uart2", "No FD has been set in select()");
+//                  ESP_LOGE("uart2", "No FD has been set in select()");
+//                  ESP_LOGE("uart2", "No FD has been set in select()");
                 continue;
             }
         }
     }
     ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
     ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
-    ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
+//      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
 
     vTaskDelete(NULL);
 }
@@ -816,9 +816,12 @@ void app_main_stella_uart2(void)
 
     uart_param_config(UART_NUM_2, &uart_config);
 
-	gpio3_set_to_input_from_uart();
-//  	uart_set_pin(UART_NUM_2, 3, 46, -1, -1);   // NUM_2 for Sensor
-	uart_set_pin(UART_NUM_2, 8, 46, -1, -1);   // NUM_2 for Sensor // CM4 4,5 a0로 해서 충돌로 Port가 고장났는지 확인용
+	//-------------------------------------------------------------------------
+	uart_set_pin(UART_NUM_2, 3, 46, -1, -1);   // NUM_2 for Sensor
+//  	// NUM_2 for Sensor // CM4 4,5 a0로 해서 충돌로 Port가 고장났는지 확인용
+//  	gpio3_set_to_input_from_uart();
+//  	uart_set_pin(UART_NUM_2, 8, 46, -1, -1);   
+	//-------------------------------------------------------------------------
 
 	if ((fd_uart2 = open("/dev/uart/2", O_RDWR)) == -1) 
 	{
