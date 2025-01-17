@@ -117,6 +117,8 @@ extern int send_to_server(char *payload, int len);
 extern void app_main_task_oled(void *arg);
 extern void app_main_tcp_server(int port);
 
+extern void spi2_adc_task(void *arg);
+
 static int do_esp32_fan_ctrl(int argc, char **argv) ;
 
 //  //  static gpio_num_t i2c_gpio_sda = CONFIG_EXAMPLE_I2C_MASTER_SDA;
@@ -1413,7 +1415,7 @@ int send_CM1106_data( struct _CO2_ppm_packet *data )
 		}
     	cJSON_Delete(root);
 
-
+		ESP_LOGW("count_CO2_ppm_valid", "val=%d", count_CO2_ppm_valid );
 		count_CO2_ppm_valid ++;
 	}
 	else
@@ -1738,11 +1740,12 @@ static esp_err_t als_conf_set(int it_time_ms )
 }
 
 
-
-
-
-
-
+void CO2_autozero_to_close(void)
+{
+	int argc = 4;
+	char *argv[4] = { "imsi", "close", "15", "400"} ;
+	do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
+}
 
 void i2c1_sensor_task(void *arg)
 {
@@ -1759,11 +1762,20 @@ void i2c1_sensor_task(void *arg)
 
 	// ALS ( Ambient Light Sensor : Conf : integration 25msec )
 	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		als_conf_set(50); //이것을 무시하고 // SENS=1 DG=1 GAIN=1 it=100ms
+		als_conf_set(50); //이것을 무시하고 // SENS=1 DG=1 GAIN=1CO2_autozero_to_close it=100ms
 	xSemaphoreGive(sema_i2c1);
 
 
 	
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+	if( flag_CO2_autozero_close_run != 0 ) 
+	{
+		ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+//  		내부에서 Take/Give한다.
+//  		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		CO2_autozero_to_close();
+//  		xSemaphoreGive(sema_i2c1);
+	}
 	while(1)
 	{
 		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
@@ -1788,19 +1800,22 @@ void i2c1_sensor_task(void *arg)
 		do_get_als(); // 
 		xSemaphoreGive(sema_i2c1);
 
-		if( ((count_CO2_ppm_valid % 100) == 0) && ( flag_CO2_autozero_close_run != 0 ) )
+		//이미 위에서 1로 변경되니까 1에서 시작하자
+		ESP_LOGW("check", "count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+		if( ((count_CO2_ppm_valid % 100) == 1) && ( flag_CO2_autozero_close_run != 0 ) )
 		{
-//  			char close[]="close";
-//  			char cali_day = "15";
-//  			char cali_ppm="400";
-			int argc = 4;
-			char *argv[4] = { "imsi", "close", "15", "400"} ;
-//  			argv[1] = close;
-//  			argv[2] = cali_day;
-//  			argv[3] = cali_ppm;
-
-			//내부에서 Sema Take하고 Release를 한다.
-			do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
+//  //  			char close[]="close";
+//  //  			char cali_day = "15";
+//  //  			char cali_ppm="400";
+//  			int argc = 4;
+//  			char *argv[4] = { "imsi", "close", "15", "400"} ;
+//  //  			argv[1] = close;
+//  //  			argv[2] = cali_day;
+//  //  			argv[3] = cali_ppm;
+//  
+//  			//내부에서 Sema Take하고 Release를 한다.
+//  			do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
+			CO2_autozero_to_close();
 		}
 
        	vTaskDelay(10000 / portTICK_PERIOD_MS);
@@ -2433,6 +2448,7 @@ int Uart_mux_setup(int direction)
 
     return 1;
 }
+
 int gpio3_set_to_input_from_uart(void)
 {
     gpio_config_t io_conf;
@@ -2591,6 +2607,10 @@ void app_main(void)
 	else
 	{
 		flag_CO2_autozero_close_run = atoi(tmp_buf);
+		ESP_LOGW("nvs_relate", "flag_CO2_autozero_close_run=%d", flag_CO2_autozero_close_run);
+		ESP_LOGW("nvs_relate", "flag_CO2_autozero_close_run=%d", flag_CO2_autozero_close_run);
+		ESP_LOGW("nvs_relate", "flag_CO2_autozero_close_run=%d", flag_CO2_autozero_close_run);
+		ESP_LOGW("nvs_relate", "flag_CO2_autozero_close_run=%d", flag_CO2_autozero_close_run);
 	}
 	
     if ( flag_IS_WEARABLE == 1 )
@@ -2623,7 +2643,6 @@ void app_main(void)
         .flags.enable_internal_pullup = true,
     };
 
-//  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
     i2c_master_bus_config_t i2c_bus_config_i2c2 = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = i2c_port_i2c2,
@@ -2632,28 +2651,9 @@ void app_main(void)
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
-//  	#endif
 
-//  	ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle));
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
-//  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c2, &tool_bus_handle_i2c2));
-//  	#endif
-
-//      i2c_device_config_t i2c_dev_conf = {
-//          .scl_speed_hz = i2c_frequency,
-//          .device_address = CM1106_CO2_I2C_DEV_ADDR, //chip_addr,
-//      };
-//  	ESP_ERROR_CHECK(i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1));
-//  
-//  	i2c_dev_conf.scl_speed_hz   = i2c_frequency ; 
-//  	i2c_dev_conf.device_address = PM2008_I2C_DEV_ADDR ; 
-//  	//맨 마직막 device_address로만 설정된다. // 그래서 그때그때 다시 설정해야 한다.
-//  	ESP_ERROR_CHECK(i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1));
-
-//  //  for UART2 Debugging : CM4와 연결된 ttyAMA3이 Enable되면 ESP32 Program을 할 수 없음 / monitoring은 됨
-//  //  	I2C thread
-//  //  	do_get_CO2((int)NULL, (char**)NULL);
 
     xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 5, NULL);
 
@@ -2661,11 +2661,18 @@ void app_main(void)
 //          // UART2도 동작하지 않나. GPIO3 --> GPIO8로 변경하면 동작하는데(GPIO3은 Input으로 하고, Jumper연결)
 //      xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL);
 
-//  	i2c2_sensor_task를 실행하면 I2S read buffer에 같은 값만 찍힌다.
+//  //  	i2c2_sensor_task를 실행하면 I2S read buffer에 같은 값만 찍힌다.
+
 //  	printf("I2S PDM RX example start\n---------------------------\n");
 //  	xTaskCreate(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, NULL); // + 2048
-//  	TaskHandle_t pdm_rx_task;
-//  	xTaskCreatePinnedToCore(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, &pdm_rx_task, 1);
+//  
+//  //  	TaskHandle_t pdm_rx_task;
+//  //  	xTaskCreatePinnedToCore(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, &pdm_rx_task, 1);
+//  
+//  
+//      xTaskCreate(spi2_adc_task, "adc_task", 4 * 1024, NULL, 5, NULL);
+
+
 
 
 	// Below is Console

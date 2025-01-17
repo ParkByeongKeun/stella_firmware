@@ -566,6 +566,13 @@ CONFIG_EXAMPLE_KEEPALIVE_COUNT=3
 # end of Example TCP-Server Configuration
 
 #
+# Example SPI-ADC Configuration
+#
+# CONFIG_EXAMPLE_INTR_USED is not set
+# CONFIG_EXAMPLE_5V_COMMANDS is not set
+# end of Example SPI-ADC Configuration
+
+#
 # SSD1306 Configuration
 #
 CONFIG_GPIO_RANGE_MAX=48
