@@ -2660,9 +2660,9 @@ void app_main(void)
 //  //  	// i2c2_sensor_task를 실행하면 i2s_dpm Buffer가 고정된값으로만 읽힌다.
 //          // UART2도 동작하지 않나. GPIO3 --> GPIO8로 변경하면 동작하는데(GPIO3은 Input으로 하고, Jumper연결)
 //      xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL);
-
+//  
 //  //  	i2c2_sensor_task를 실행하면 I2S read buffer에 같은 값만 찍힌다.
-
+//  
 //  	printf("I2S PDM RX example start\n---------------------------\n");
 //  	xTaskCreate(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, NULL); // + 2048
 //  
