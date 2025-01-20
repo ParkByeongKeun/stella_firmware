@@ -29,6 +29,13 @@
 
 #include "fft.h" // github.com/fakufaku/esp32-fft
 
+#include <cJSON.h>
+#include <string.h>
+#include <unistd.h>
+
+uint16_t strongest_k_u16[2];
+uint16_t avg_u16[2];
+uint16_t peak_u16[2];
 
 //  #define EXAMPLE_PDM_RX_CLK_IO           EXAMPLE_I2S_BCLK_IO1      // I2S PDM RX clock io number
 //  #define EXAMPLE_PDM_RX_DIN_IO           EXAMPLE_I2S_DIN_IO1      // I2S PDM RX data in io number
@@ -95,17 +102,38 @@
                                      // 16KHz                        2048
 #define BIN_WIDTH_HZ                ((float)SAMPLE_RATE_HZ / (float)FFT_BUF_SAMPLES) // just a total guess lahmaoh
 
+extern SemaphoreHandle_t sema_tcp ;
+extern SemaphoreHandle_t sema_spi_ads114s;
+extern SemaphoreHandle_t sema_uart2 ;
+
+extern char my_mac_str[32];
+extern int flag_IS_WEARABLE ;
+extern int fd_uart2 ;
+extern int send_to_server(char *payload, int len);
+
+static const char *JSON_TAG = "JSON";
+
 // note: though presented as an unsigned buffer this is really a signed value - functions that interpret 
 // these values should use proper casting (to a signed type)
 //  uint8_t PDMDataBuffer[PDM_BUF_BYTES];
 uint8_t *PDMDataBuffer;
 
+struct _pdm_msg
+{
+	float strongest_Hz;
+	uint16_t avg;
+	uint16_t peak;
+};
+
 MessageBufferHandle_t buf_idx_msg_handle;
-const size_t buf_idx_msg_bytes = sizeof(size_t) + sizeof(size_t); // one size_t for buffer index, another size_t for MessageBuffer overhead
+MessageBufferHandle_t buf_send_msg_handle;
+const size_t buf_idx_msg_bytes  = sizeof(size_t) + sizeof(size_t); // one size_t for buffer index, another size_t for MessageBuffer overhead
+const size_t buf_send_msg_bytes = sizeof(size_t) + sizeof(struct _pdm_msg); // one size_t for buffer index, another size_t for MessageBuffer overhead
 
 // fwd declarations
 void disp_buf(uint8_t* buf, size_t length);
 void disp_avg_buf(uint8_t* buf, size_t length, uint16_t *avg);
+
 
 int PDM_LR_select(int pdm_select_val)
 {
@@ -193,13 +221,66 @@ void calc_avg_peak_buf(uint8_t* buf, size_t length, uint16_t *avg_u16, uint16_t 
 	*avg_u16 = (int16_t)(acc/ (length/FFT_BYTES_PER_SAMPLE) );
 }
 
+void task_send_JSON (void* arg) 
+{
+//      size_t buf_idx = 0;
+//      uint8_t* buf = NULL;
+//  	uint16_t avg_u16[2];
+//  	uint16_t peak_u16[2];
+
+
+//  //  uint8_t PDMDataBuffer[PDM_BUF_BYTES];
+//  	PDMDataBuffer = (uint8_t *)calloc(1, PDM_BUF_BYTES);
+
+    while (1) 
+	{
+		struct _pdm_msg pdm_msg ;
+//      	size_t buf_idx = 0;
+        size_t rx_bytes = xMessageBufferReceive( buf_send_msg_handle, (void*)(&pdm_msg), sizeof(struct _pdm_msg), portMAX_DELAY );
+        assert(rx_bytes == sizeof(struct _pdm_msg));
+
+		{
+		    ESP_LOGI(JSON_TAG, "Serialize.....PDM_Result");
+		    cJSON *root;
+		   	root = cJSON_CreateObject();
+	    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+		   	cJSON_AddNumberToObject(root, "PDM_BIN_WIDTH_HZ",      BIN_WIDTH_HZ);
+//  		   	cJSON_AddNumberToObject(root, "PDM_Strongest_Hz",      strongest_k[buf_idx]*BIN_WIDTH_HZ);
+//  		   	cJSON_AddNumberToObject(root, "PDM_Avg",               avg_u16[buf_idx] );
+//  		   	cJSON_AddNumberToObject(root, "PDM_Peak",              peak_u16[buf_idx]);
+		   	cJSON_AddNumberToObject(root, "PDM_Strongest_Hz",      pdm_msg.strongest_Hz);
+		   	cJSON_AddNumberToObject(root, "PDM_Avg",               pdm_msg.avg  );
+		   	cJSON_AddNumberToObject(root, "PDM_Peak",              pdm_msg.peak );
+
+//  			free(pdm_msg);
+	
+		    char *my_json_string = cJSON_Print(root);
+	
+		   	ESP_LOGI("FAN", "my_json_string\n%s",my_json_string);
+			if( flag_IS_WEARABLE == 0 ) //Static Main
+			{
+				xSemaphoreTake(sema_uart2, portMAX_DELAY);
+				write(fd_uart2, my_json_string, strlen(my_json_string));
+				xSemaphoreGive(sema_uart2);
+			}
+			else // Wearable Main
+			{
+				xSemaphoreTake(sema_tcp, portMAX_DELAY);
+				send_to_server(my_json_string, strlen(my_json_string));
+				xSemaphoreGive(sema_tcp);
+			}
+		   	cJSON_Delete(root);
+		}
+	}
+}
 
 void task_process (void* arg) 
 {
     size_t buf_idx = 0;
     uint8_t* buf = NULL;
-	uint16_t avg_u16[2];
-	uint16_t peak_u16[2];
+//  	uint16_t strongest_k[2];
+//  	uint16_t avg_u16[2];
+//  	uint16_t peak_u16[2];
 
 //  uint8_t PDMDataBuffer[PDM_BUF_BYTES];
 	PDMDataBuffer = (uint8_t *)calloc(1, PDM_BUF_BYTES);
@@ -260,14 +341,30 @@ void task_process (void* arg)
 
 //  		if( (avg_u16[buf_idx] > 300 ) && ( peak_u16[buf_idx] > 4000 ) )
 //  		if( (avg_u16[buf_idx] > 220 ) && ( peak_u16[buf_idx] > 4000 ) )
-		if( strongest_k > 10 ) 
+//  		if( strongest_k > 10 )  // 78.125Hz
+		if( strongest_k > 300/BIN_WIDTH_HZ ) 
 		{
 //  	        ESP_LOGE("i2s_pdm", "strongest(k=%4d, val=%9.3f) \t\t%5.3f(Hz) : avg=%5d peak=%5u\n", strongest_k, strongest_val, 
 //  			                                   (float)strongest_k*BIN_WIDTH_HZ, avg_u16[buf_idx], peak_u16[buf_idx] );
 	        printf("i2s_pdm: strongest(k=%4d, val=%9.3f) \t\t%5.3f(Hz) : avg=%5d peak=%5u\n", strongest_k, strongest_val, 
 			                                   (float)strongest_k*BIN_WIDTH_HZ, avg_u16[buf_idx], peak_u16[buf_idx] );
+			strongest_k_u16[buf_idx] = strongest_k;
+
+			struct _pdm_msg *pdm_msg;
+			pdm_msg = calloc(1, sizeof(struct _pdm_msg) );
+
+			pdm_msg->strongest_Hz = (float)strongest_k*BIN_WIDTH_HZ;
+			pdm_msg->avg          = avg_u16[buf_idx];
+			pdm_msg->peak         = peak_u16[buf_idx];
+	        size_t tx_bytes = xMessageBufferSend( buf_send_msg_handle, pdm_msg, sizeof(struct _pdm_msg), portMAX_DELAY );
+			if( tx_bytes != sizeof(struct _pdm_msg))
+			{
+				ESP_LOGE("xMessageBufferSend", "failed to send using buf_send_msg_handle");
+			}
+			free(pdm_msg);
 		}
 #endif
+		
 
         // clean up output
         fft_destroy(real_fft_plan);
@@ -341,6 +438,12 @@ void i2s_example_pdm_rx_task(void *args)
     buf_idx_msg_handle = xMessageBufferCreate( buf_idx_msg_bytes );
     assert(buf_idx_msg_handle);
 
+    buf_send_msg_handle = xMessageBufferCreate( buf_send_msg_bytes );
+    assert(buf_send_msg_handle);
+
+	TaskHandle_t pdm_send_json_task;
+    xTaskCreatePinnedToCore(task_send_JSON, "pdm_JSON", 1024 * 4, NULL, 5, &pdm_send_json_task, 1);
+
 //      xTaskCreate(task_process, "process task", 1024 * 4, NULL, 1, NULL); // *2 --> *4
 	TaskHandle_t pdm_process_task;
     xTaskCreatePinnedToCore(task_process, "process task", 1024 * 4, NULL, 5, &pdm_process_task, 1);
@@ -365,7 +468,7 @@ void i2s_example_pdm_rx_task(void *args)
         /* Read i2s data */
         if (i2s_channel_read(rx_chan, buf, FFT_BUF_BYTES, &r_bytes, portMAX_DELAY) == ESP_OK) 
 		{
-//  			#ifdef DEBUG_PRINT_RAW
+			#ifdef DEBUG_PRINT_RAW
 			if( count_loop % 10 == 0 ) 
 			{
 				ESP_LOGI("task rx loop","-------------------------------------------");
@@ -378,7 +481,7 @@ void i2s_example_pdm_rx_task(void *args)
 		                   r_buf[i+0], r_buf[i+1], r_buf[i+2], r_buf[i+3], r_buf[i+4], r_buf[i+5], r_buf[i+6], r_buf[i+7]);
 			    }
 			}
-//  			#endif
+			#endif
 
 	        // signal the processing task which buffer to handle
 	        size_t tx_bytes = xMessageBufferSend(buf_idx_msg_handle, &buf_idx, sizeof(size_t), portMAX_DELAY);

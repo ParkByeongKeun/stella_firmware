@@ -23,7 +23,18 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#include <cJSON.h>
+
+extern SemaphoreHandle_t sema_tcp ;
 extern SemaphoreHandle_t sema_spi_ads114s;
+extern SemaphoreHandle_t sema_uart2 ;
+
+extern char my_mac_str[32];
+extern int flag_IS_WEARABLE ;
+extern int fd_uart2 ;
+extern int send_to_server(char *payload, int len);
+
+static const char *JSON_TAG = "JSON";
 
 
 /*
@@ -59,8 +70,10 @@ extern SemaphoreHandle_t sema_spi_ads114s;
 
 #  define ADS114S_SPI_HOST       SPI2_HOST
 
-//  #  define PIN_NUM_CS     9
-#  define PIN_NUM_CS        20 // SPI2_CS가 ADS114S가 뜨거워지면서 죽은것 같다.
+//  #  define PIN_NUM_CS    9
+//  #  define PIN_NUM_CS   20 // SPI2_CS가 ADS114S가 뜨거워지면서 죽은것 같다. 
+//                               --> wearable에서는 USB D+라서 GPIO5로 변경함
+#  define PIN_NUM_CS        5 // 
 
 #  define PIN_NUM_CLK       10
 #  define PIN_NUM_MISO      11
@@ -259,7 +272,7 @@ static void gpio_task_example(void* arg)
     uint32_t io_num;
     for (;;) {
         if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
-            printf("ADS114S_nRDY:GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num));
+            ESP_LOGE("gpio_task_example", "ADS114S_nRDY:GPIO[%"PRIu32"] intr, val: %d\n", io_num, gpio_get_level(io_num));
         }
     }
 }
@@ -273,7 +286,7 @@ int spi_ads114s_command(ads114s_context_t* ctx, char command)
 	memset(buf_w, 0, sizeof(buf_w));
 	memset(buf_r, 0, sizeof(buf_r));
 
-	ESP_LOGI("spi_ads114s_command", "---------- 0x%02x ------------", command);
+//  	ESP_LOGI("spi_ads114s_command", "---------- 0x%02x ------------", command);
 	
 
     err = spi_device_acquire_bus(ctx->spi, portMAX_DELAY);
@@ -308,9 +321,9 @@ int spi_ads114s_WREG(ads114s_context_t* ctx, char addr, char w_data)
 	memset(buf_w, 0, sizeof(buf_w));
 	memset(buf_r, 0, sizeof(buf_r));
 
-//  	ESP_LOGI("spi_ads114s_WREG", "before spi_device_acquire_bus()");
+//  //  	ESP_LOGI("spi_ads114s_WREG", "before spi_device_acquire_bus()");
     err = spi_device_acquire_bus(ctx->spi, portMAX_DELAY);
-//  	ESP_LOGI("spi_ads114s_WREG", "after  spi_device_acquire_bus()");
+//  //  	ESP_LOGI("spi_ads114s_WREG", "after  spi_device_acquire_bus()");
     if (err != ESP_OK) {
         return err;
     }
@@ -335,13 +348,13 @@ int spi_ads114s_WREG(ads114s_context_t* ctx, char addr, char w_data)
 //          err = ads114s_wait_done(ctx);
 //      }
 
-	ESP_LOGI("spi_ads114s_WREG", "addr(start)=%d, length=%d", (addr & ~(0x20)), 1);
-//  	hexdump3("WREG:buf_w", buf_w, sizeof(buf_w));
-//  	hexdump3("WREG:buf_r", buf_r, sizeof(buf_r));
-//  	hexdump3("WREG:buf_w", buf_w, len+2); // command+len+[values]
-//  	hexdump3("WREG:buf_r", buf_r, len+2);
-	hexdump3("WREG:buf_w", buf_w, 3); // command+len+[values]
-//  	hexdump3("WREG:buf_r", &buf_r[2], len);
+//  	ESP_LOGI("spi_ads114s_WREG", "addr(start)=%d, length=%d", (addr & ~(0x20)), 1);
+//  //  	hexdump3("WREG:buf_w", buf_w, sizeof(buf_w));
+//  //  	hexdump3("WREG:buf_r", buf_r, sizeof(buf_r));
+//  //  	hexdump3("WREG:buf_w", buf_w, len+2); // command+len+[values]
+//  //  	hexdump3("WREG:buf_r", buf_r, len+2);
+//  	hexdump3("WREG:buf_w", buf_w, 3); // command+len+[values]
+//  //  	hexdump3("WREG:buf_r", &buf_r[2], len);
 
     spi_device_release_bus(ctx->spi);
     return err;
@@ -358,9 +371,9 @@ int spi_ads114s_RREG(ads114s_context_t* ctx, char addr, char* rdata, uint8_t len
 	memset(buf_w, 0, sizeof(buf_w));
 	memset(buf_r, 0, sizeof(buf_r));
 
-//  	ESP_LOGI("spi_ads114s_RREG", "before spi_device_acquire_bus()");
+//  //  	ESP_LOGI("spi_ads114s_RREG", "before spi_device_acquire_bus()");
     err = spi_device_acquire_bus(ctx->spi, portMAX_DELAY);
-//  	ESP_LOGI("spi_ads114s_RREG", "after  spi_device_acquire_bus()");
+//  //  	ESP_LOGI("spi_ads114s_RREG", "after  spi_device_acquire_bus()");
     if (err != ESP_OK) {
         return err;
     }
@@ -386,14 +399,14 @@ int spi_ads114s_RREG(ads114s_context_t* ctx, char addr, char* rdata, uint8_t len
 //      }
     spi_device_release_bus(ctx->spi);
 
-	ESP_LOGI("spi_ads114s_RREG", "addr(start)=%d, length=%d", (addr & ~(0x20)), len);
-//  	hexdump3("RREG:buf_w", buf_w, sizeof(buf_w));
-//  	hexdump3("RREG:buf_r", buf_r, sizeof(buf_r));
-//  	hexdump3("RREG:buf_w", buf_w, len+2); // command+len+[values]
-//  	hexdump3("RREG:buf_r", buf_r, len+2);
-	hexdump3("RREG:buf_w", buf_w, 2); // command+len+[values]
-//  	hexdump3("RREG:buf_r", &buf_r[2], len);
-	hexdump3("RREG:buf_r", &buf_r[1], len);
+//  	ESP_LOGI("spi_ads114s_RREG", "addr(start)=%d, length=%d", (addr & ~(0x20)), len);
+//  //  	hexdump3("RREG:buf_w", buf_w, sizeof(buf_w));
+//  //  	hexdump3("RREG:buf_r", buf_r, sizeof(buf_r));
+//  //  	hexdump3("RREG:buf_w", buf_w, len+2); // command+len+[values]
+//  //  	hexdump3("RREG:buf_r", buf_r, len+2);
+//  	hexdump3("RREG:buf_w", buf_w, 2); // command+len+[values]
+//  //  	hexdump3("RREG:buf_r", &buf_r[2], len);
+//  	hexdump3("RREG:buf_r", &buf_r[1], len);
 
 
 	memcpy(rdata, &buf_r[1], len);
@@ -409,9 +422,9 @@ int spi_ads114s_RDATA(ads114s_context_t* ctx, char* rdata)
 	memset(buf_w, 0, sizeof(buf_w));
 	memset(buf_r, 0, sizeof(buf_r));
 
-//  	ESP_LOGI("spi_ads114s_RDATA", "before spi_device_acquire_bus()");
+//  //  	ESP_LOGI("spi_ads114s_RDATA", "before spi_device_acquire_bus()");
     err = spi_device_acquire_bus(ctx->spi, portMAX_DELAY);
-//  	ESP_LOGI("spi_ads114s_RDATA", "after  spi_device_acquire_bus()");
+//  //  	ESP_LOGI("spi_ads114s_RDATA", "after  spi_device_acquire_bus()");
     if (err != ESP_OK) {
         return err;
     }
@@ -434,9 +447,9 @@ int spi_ads114s_RDATA(ads114s_context_t* ctx, char* rdata)
 //      }
     spi_device_release_bus(ctx->spi);
 
-	ESP_LOGI("spi_ads114s_RDATA", "cmd)=%02x, length=%d", RDATA_OPCODE_CONTROL_COMMAND, 3);
-	hexdump3("RDATA:buf_w", buf_w, 1); // command+[values[15:0] + val[7:0]) 
-	hexdump3("RDATA:buf_r", &buf_r[0], 2); //without STATUS & CRC
+//  	ESP_LOGI("spi_ads114s_RDATA", "cmd)=%02x, length=%d", RDATA_OPCODE_CONTROL_COMMAND, 3);
+//  	hexdump3("RDATA:buf_w", buf_w, 1); // command+[values[15:0] + val[7:0]) 
+//  	hexdump3("RDATA:buf_r", &buf_r[0], 2); //without STATUS & CRC
 
 
 
@@ -453,7 +466,7 @@ int spi_ads114s_RDATA(ads114s_context_t* ctx, char* rdata)
 
 #define PIN_ADS114S_nRDY	(13)
 
-int gpio9_set_to_input_from_spi_cs(void)
+int gpio9_set_to_input_from_spi_cs(void) // 기존 GPIO9(SPI_CS)가 고장이라서 Port를 변경함
 {
     gpio_config_t io_conf;
 
@@ -547,8 +560,8 @@ void spi2_adc_task(void *arg)
 
 	while(1)
 	{
-
 		xSemaphoreTake(sema_spi_ads114s, portMAX_DELAY);
+
 	    ESP_LOGI(TAG, "Initializing device... Reset");
 		for( int k = 0 ; k < 2 ; k++ )
 		{
@@ -596,7 +609,7 @@ void spi2_adc_task(void *arg)
 		for( int j = 0 ; j < 6 ; j++ )
 		{
 			char inpmux = (j<<4) | 0x0C;
-			printf(">>>>>>>>>>>>>>>>>>>. inpmux = 0x%02x<<<<<<<<<<<<<<<<<<<\n", inpmux);
+//  			printf(">>>>>>>>>>>>>>>>>>>. inpmux = 0x%02x<<<<<<<<<<<<<<<<<<<\n", inpmux);
 			
 			ret = spi_ads114s_WREG(ads114s_handle, (char)INPMUX_ADDR,   inpmux);              
 				vTaskDelay( 10 / portTICK_PERIOD_MS);
@@ -605,15 +618,19 @@ void spi2_adc_task(void *arg)
 			ret = spi_ads114s_command(ads114s_handle, (char)(STOP_OPCODE_CONTROL_COMMAND) );
 				vTaskDelay(100 / portTICK_PERIOD_MS);
 	
+			vTaskDelay(1000 / portTICK_PERIOD_MS);
 			for( int i = 0 ; i < 5 ; i++ )
 			{
-		    	ESP_LOGI(TAG, "================== %3d ====================================", i);
-	//  			ret = spi_ads114s_RREG(ads114s_handle, STATUS_ADDR, rbuf, 1);
+//  		    	ESP_LOGI(TAG, "================== %3d ====================================", i);
+//  	//  			ret = spi_ads114s_RREG(ads114s_handle, STATUS_ADDR, rbuf, 1);
 				ret = spi_ads114s_RDATA(ads114s_handle, (char *)&adc_val[j]);
 	
 		    	ESP_LOGI(TAG, "==================adc_val[%d] %04x ========================", j, (int)htons(adc_val[j]) );
 				adc_val[j] = htons(adc_val[j]);
-				vTaskDelay(100 / portTICK_PERIOD_MS);
+//  				vTaskDelay(100 / portTICK_PERIOD_MS); // Log를 삭제하면 너무 빨라서 모두 0만 나온다
+				if( adc_val[j] != 0 )
+					break;
+				vTaskDelay(1000 / portTICK_PERIOD_MS);
 	
 			}
 		
@@ -635,8 +652,38 @@ void spi2_adc_task(void *arg)
 			      (uint16_t)adc_val[3], (uint16_t)adc_val[4], (uint16_t)adc_val[5]);
 	
 	    ESP_LOGI(TAG, "SPI-ADC Read All Channel  finished.");
+
 		xSemaphoreGive(sema_spi_ads114s);
+
+		{
+		    ESP_LOGI(JSON_TAG, "Serialize.....ADC_Result");
+		    cJSON *root;
+		   	root = cJSON_CreateObject();
+	    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_H2S_val",      adc_val[0]);
+		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_O3_val",       adc_val[1]);
+		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_CO_val",       adc_val[2]);
+		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_NO2_val",      adc_val[3]);
+		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_NH3_val",      adc_val[4]);
+		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_3.3V_div2_val",adc_val[5]);
 	
+		    char *my_json_string = cJSON_Print(root);
+	
+		   	ESP_LOGI("FAN", "my_json_string\n%s",my_json_string);
+			if( flag_IS_WEARABLE == 0 ) //Static Main
+			{
+				xSemaphoreTake(sema_uart2, portMAX_DELAY);
+				write(fd_uart2, my_json_string, strlen(my_json_string));
+				xSemaphoreGive(sema_uart2);
+			}
+			else // Wearable Main
+			{
+				xSemaphoreTake(sema_tcp, portMAX_DELAY);
+				send_to_server(my_json_string, strlen(my_json_string));
+				xSemaphoreGive(sema_tcp);
+			}
+		   	cJSON_Delete(root);
+		}
 //  	    while (1) {
 //  	        // Add your main loop handling code here.
 //  	        vTaskDelay(100);

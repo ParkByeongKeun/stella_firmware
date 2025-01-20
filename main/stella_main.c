@@ -1749,6 +1749,20 @@ void CO2_autozero_to_close(void)
 
 void i2c1_sensor_task(void *arg)
 {
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+
+	if( flag_CO2_autozero_close_run != 0 ) 
+	{
+		ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+//  		내부에서 Take/Give한다.
+//  		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		CO2_autozero_to_close();
+//  		xSemaphoreGive(sema_i2c1);
+	}
+
+
 	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 
 		set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);
@@ -1767,15 +1781,6 @@ void i2c1_sensor_task(void *arg)
 
 
 	
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-	if( flag_CO2_autozero_close_run != 0 ) 
-	{
-		ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-//  		내부에서 Take/Give한다.
-//  		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		CO2_autozero_to_close();
-//  		xSemaphoreGive(sema_i2c1);
-	}
 	while(1)
 	{
 		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
@@ -1802,7 +1807,7 @@ void i2c1_sensor_task(void *arg)
 
 		//이미 위에서 1로 변경되니까 1에서 시작하자
 		ESP_LOGW("check", "count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-		if( ((count_CO2_ppm_valid % 100) == 1) && ( flag_CO2_autozero_close_run != 0 ) )
+		if( ((count_CO2_ppm_valid % 50) == 10) && ( flag_CO2_autozero_close_run != 0 ) )
 		{
 //  //  			char close[]="close";
 //  //  			char cali_day = "15";
@@ -2655,23 +2660,32 @@ void app_main(void)
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c2, &tool_bus_handle_i2c2));
 
-    xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 5, NULL);
+    xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 1, NULL);
 
 //  //  	// i2c2_sensor_task를 실행하면 i2s_dpm Buffer가 고정된값으로만 읽힌다.
 //          // UART2도 동작하지 않나. GPIO3 --> GPIO8로 변경하면 동작하는데(GPIO3은 Input으로 하고, Jumper연결)
-//      xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL);
-//  
+//      xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL); // Priority가 높다(너무 높아서 다른  Task가 동작하지 못했나 보다
+//  //  
+
+//  //  	------------------------------------------------------------------------
 //  //  	i2c2_sensor_task를 실행하면 I2S read buffer에 같은 값만 찍힌다.
 //  
 //  	printf("I2S PDM RX example start\n---------------------------\n");
-//  	xTaskCreate(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, NULL); // + 2048
-//  
-//  //  	TaskHandle_t pdm_rx_task;
-//  //  	xTaskCreatePinnedToCore(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, &pdm_rx_task, 1);
-//  
-//  
-//      xTaskCreate(spi2_adc_task, "adc_task", 4 * 1024, NULL, 5, NULL);
+//  	xTaskCreate(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 4, NULL); // + 2048
+//  //  //  	TaskHandle_t pdm_rx_task;
+//  //  //  	xTaskCreatePinnedToCore(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, &pdm_rx_task, 1);
+//  //  //  	------------------------------------------------------------------------
 
+
+//  	------------------------------------------------------------------------
+//      xTaskCreate(spi2_adc_task, "adc_task", 4 * 1024, NULL, 1, NULL);
+//  	------------------------------------------------------------------------
+
+//  //  아래로 이동시켜봄
+//  //  	// i2c2_sensor_task를 실행하면 i2s_dpm Buffer가 고정된값으로만 읽힌다.
+//          // UART2도 동작하지 않나. GPIO3 --> GPIO8로 변경하면 동작하는데(GPIO3은 Input으로 하고, Jumper연결)
+//      xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 1, NULL);
+//  //  //  
 
 
 
