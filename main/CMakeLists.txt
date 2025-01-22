@@ -28,5 +28,9 @@ idf_component_register(SRCS "stella_main.c"
 							"${srcs_i2s_pdm}"
                        INCLUDE_DIRS "."
 					         "./esp32-fft/components/fft/include"
-					   REQUIRES ${requires})
+					   REQUIRES ${requires}  )
 
+# PRIV_REQUIRES driver soft_i2c_master)
+#
+#							"ESP32_SoftWire.cpp"
+#

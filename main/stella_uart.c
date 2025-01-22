@@ -792,7 +792,7 @@ void app_main_stella_uart1(void)
 	ESP_LOGW("shcho", "uart_mux_select(MUX_SEL_RS9A)");
 	uart_mux_select(MUX_SEL_RS9A);
 
-    xTaskCreate(uart_select_task_uart1, "task_uart1", 4 * 1024, NULL, 5, NULL);
+    xTaskCreate(uart_select_task_uart1, "task_uart1", 4 * 1024, NULL, 8, NULL);
 }
 extern int gpio3_set_to_input_from_uart(void);
 void app_main_stella_uart2(void)
@@ -817,11 +817,11 @@ void app_main_stella_uart2(void)
     uart_param_config(UART_NUM_2, &uart_config);
 
 	//-------------------------------------------------------------------------
-	uart_set_pin(UART_NUM_2, 3, 46, -1, -1);   // NUM_2 for Sensor
-//  	// NUM_2 for Sensor // CM4 4,5 a0로 해서 충돌로 Port가 고장났는지 확인용
-//  	gpio3_set_to_input_from_uart(); // original  UART2_TX --> GPIO input
-//  	uart_set_pin(UART_NUM_2, 8, 46, -1, -1);   
-//  	//-------------------------------------------------------------------------
+//  	uart_set_pin(UART_NUM_2, 3, 46, -1, -1);   // NUM_2 for Sensor
+	// NUM_2 for Sensor // CM4 4,5 a0로 해서 충돌로 Port가 고장났는지 확인용
+	gpio3_set_to_input_from_uart(); // original  UART2_TX --> GPIO input
+	uart_set_pin(UART_NUM_2, 8, 46, -1, -1);   
+	//-------------------------------------------------------------------------
 
 	if ((fd_uart2 = open("/dev/uart/2", O_RDWR)) == -1) 
 	{
@@ -842,6 +842,6 @@ void app_main_stella_uart2(void)
 
 	xSemaphoreGive(sema_uart2);
 
-    xTaskCreate(uart_select_task_uart2, "task_uart2", 4 * 1024, NULL, 5, NULL);
+    xTaskCreate(uart_select_task_uart2, "task_uart2", 4 * 1024, NULL, 8, NULL);
 	return;
 }

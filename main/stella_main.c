@@ -42,6 +42,7 @@
 #include "stella_global.h"
 #include "i2s_pdm_example.h"
 
+
 #define STORAGE_NAMESPACE "storage"
 static int count_CO2_ppm_valid = 0;
 
@@ -57,7 +58,7 @@ SemaphoreHandle_t sema_spi_ads114s = NULL;
 
 static const char *TAG = "i2c-tools";
 static uint32_t i2c_frequency = 100 * 1000;
-int flag_CO2_autozero_close_run = 0;
+int flag_CO2_autozero_close_run = 1;
 //  static uint32_t i2c_frequency = 100 * 1000;
 #define I2C_TOOL_TIMEOUT_VALUE_MS (50)
 
@@ -66,6 +67,20 @@ int flag_CO2_autozero_close_run = 0;
 #define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_INPUT_IO_0) | (1ULL<<GPIO_INPUT_IO_1))
 
 #define GPIO_ZMOD_RESET    45
+
+#define I2C2__USING_GPIO	(1)
+//  #define I2C2__USING_GPIO	(0)
+
+//shcho add
+#if I2C2__USING_GPIO
+//  sdfsadfasdfasf
+#include "soft_i2c_master.h"
+soft_i2c_master_bus_t bus_i2c2_gpio = NULL;
+#endif
+
+#define GPIO_I2C2_SCL    15
+#define GPIO_I2C2_SDA    16
+
 
 #define SHT4X_CMD_RESET             0x94
 #define SHT4X_CMD_SERIAL            0x89
@@ -126,8 +141,15 @@ static int do_esp32_fan_ctrl(int argc, char **argv) ;
 //  static gpio_num_t i2c_gpio_sda = 7; // i2c2 : SDA 16
 //  static gpio_num_t i2c_gpio_scl = 6; // i2c2 : SCL 15
 
-static i2c_port_t i2c_port_i2c1 = I2C_NUM_0;
+
+// i2c2를 Eanble하면 I2S(x), UART2_Tx(x) : PORT를 변경해 봄
+//  static i2c_port_t i2c_port_i2c1 = I2C_NUM_0;
+static i2c_port_t i2c_port_i2c1 = I2C_NUM_1;
+#if I2C2__USING_GPIO
+#else
 static i2c_port_t i2c_port_i2c2 = I2C_NUM_1;
+//  static i2c_port_t i2c_port_i2c2 = LP_I2C_NUM_0; // only for C6 or P4
+#endif
 
 #if CONFIG_EXAMPLE_STORE_HISTORY
 
@@ -1835,6 +1857,8 @@ void i2c1_sensor_task(void *arg)
 static sht4x_t dev_sht4x; //shcho add
 static sgp40_t dev_sgp40;
 #define I2C2_FREQ_HZ 400000
+uint8_t i2c2_ack = 0;
+//  uint8_t i2c2_data[100];
 
 #define G_POLYNOM_SHT4x 0x31
 
@@ -1872,6 +1896,43 @@ static uint8_t crc8_sgp40(const uint8_t *data, size_t count)
 //  int get_SHT4x_Serial_num(sht4x_t *dev, int cmd, sht4x_raw_data_t *s, int len)
 int get_SHT4x_cmd_resp(sht4x_t *dev, int cmd, sht4x_raw_data_t res, int len)
 {
+#if I2C2__USING_GPIO
+	memset((char *)res, 0, sizeof(sht4x_raw_data_t));
+
+	uint8_t command = (uint8_t)cmd;
+
+    esp_err_t ret = soft_i2c_master_write(bus_i2c2_gpio,SHT4X_I2C_ADDRESS, (uint8_t*)&command, 1);
+//  	ESP_GOTO_ON_ERROR(ret, error, "get_SHT4x_cmd_resp", "Error writing to I2C device");
+//      esp_err_t ret = i2c_master_transmit(dev_handle_i2c2, (uint8_t*)&command, 1, I2C_TOOL_TIMEOUT_VALUE_MS);
+
+    vTaskDelay(pdMS_TO_TICKS(10) + 1);  //바로 응답하지 못해서(NACK) : need Delay
+
+	if ( len != 0 ) 
+	{
+//  		ret = i2c_master_receive(dev_handle_i2c2, (uint8_t*)res, len, I2C_TOOL_TIMEOUT_VALUE_MS);
+		ret = soft_i2c_master_read(bus_i2c2_gpio, SHT4X_I2C_ADDRESS, (uint8_t*)res, len);
+//  		ESP_GOTO_ON_ERROR(ret, error, "get_SHT4x_cmd_resp", "Error reading from I2C device");
+	    if (ret == ESP_OK) 
+		{
+	        ESP_LOGI(TAG, "SHT4x I2C Fead OK : Get Serial Num(Receive)");
+			hexdump3("SHT4x cmd_resp Raw data", res , len);
+
+			ESP_LOGW("SHT4x_cmd_resp", "crc ( 0x%02x, 0x%02x )", crc8_sht4x(res,2), crc8_sht4x(res+3,2));
+			if (res[2] != crc8_sht4x(res, 2) || res[5] != crc8_sht4x(res + 3, 2))
+			{
+			    ESP_LOGE(TAG, "get_SHT4x_cmd_resp : Invalid CRC");
+			    return ESP_ERR_INVALID_CRC;
+			}
+			
+	    }
+		else
+		{
+			return -1;
+		}
+
+	}
+	return 0;
+#else
     i2c_device_config_t i2c_dev_conf = {
 //          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
         .scl_speed_hz = 100000 , // 100KHz //i2c_frequency,
@@ -1879,7 +1940,6 @@ int get_SHT4x_cmd_resp(sht4x_t *dev, int cmd, sht4x_raw_data_t res, int len)
     };
 	ESP_LOGW("get_SHT4x_cmd_resp", "chip_addr=%02x, cmd=%02x", dev->i2c_dev.addr, cmd);
 
-	i2c_master_dev_handle_t dev_handle_i2c2;
     if (i2c_master_bus_add_device( tool_bus_handle_i2c2, 
 	                              &i2c_dev_conf, 
 								  &dev_handle_i2c2) != ESP_OK) 
@@ -1923,6 +1983,7 @@ int get_SHT4x_cmd_resp(sht4x_t *dev, int cmd, sht4x_raw_data_t res, int len)
     }
 
 	return 0;
+#endif
 }
 
 static inline uint16_t swap16_sgp40(uint16_t v)
@@ -1933,6 +1994,7 @@ static inline uint16_t swap16_sgp40(uint16_t v)
 static esp_err_t send_cmd_sgp40(sgp40_t *dev, uint16_t cmd, uint16_t *data, size_t words)
 {
 	uint8_t buf[2 + words * 3];
+
     // add command
     *(uint16_t *)buf = swap16_sgp40(cmd);
     if (data && words)
@@ -1947,12 +2009,20 @@ static esp_err_t send_cmd_sgp40(sgp40_t *dev, uint16_t cmd, uint16_t *data, size
     ESP_LOGV(TAG, "Sending buffer:");
     ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, sizeof(buf), ESP_LOG_VERBOSE);
 
+
+#if I2C2__USING_GPIO
+	hexdump3("SGP40 send_cmd_sgp40", buf, 2+words*3);
+    esp_err_t ret = soft_i2c_master_write(bus_i2c2_gpio, SGP40_ADDR, (uint8_t *)buf, 2+words*3 );
+//  	ESP_GOTO_ON_ERROR(ret, error, "send_cmd_sgp40", "Error writing to I2C device");
+    return ret;
+#else
+
     i2c_device_config_t i2c_dev_conf = {
 //          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
         .scl_speed_hz = 100000 , // 100KHz //i2c_frequency,
         .device_address = dev->i2c_dev.addr,
     };
-	ESP_LOGW("get_SGP40_cmd_resp", "chip_addr=%02x, words=%d, cmd=%04x", dev->i2c_dev.addr, words, cmd);
+	ESP_LOGW("send_cmd_sgp40", "chip_addr=%02x, words=%d, cmd=%04x", dev->i2c_dev.addr, words, cmd);
 
     i2c_master_dev_handle_t dev_handle_i2c2;
     if (i2c_master_bus_add_device(  tool_bus_handle_i2c2, &i2c_dev_conf, &dev_handle_i2c2) != ESP_OK) { return 1; }
@@ -1969,12 +2039,33 @@ static esp_err_t send_cmd_sgp40(sgp40_t *dev, uint16_t cmd, uint16_t *data, size
     }
 //      return i2c_dev_write(dev, NULL, 0, buf, sizeof(buf));
     return ret;
-
+#endif
 }
 
 static esp_err_t read_resp_sgp40(sgp40_t *dev, uint16_t *data, size_t words)
 {
     uint8_t buf[words * 3];
+#if I2C2__USING_GPIO
+	esp_err_t ret = soft_i2c_master_read(bus_i2c2_gpio, SGP40_ADDR, (uint8_t*)buf, words*(2+1));
+//  	ESP_GOTO_ON_ERROR(ret, error, "read_resp_cmd_sgp40", "Error reading from I2C device");
+
+    ESP_LOGV(TAG, "Received buffer:");
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, buf, sizeof(buf), ESP_LOG_VERBOSE);
+
+    for (size_t i = 0; i < words; i++)
+    {
+        uint8_t *p = buf + i * 3;
+        uint8_t crc = crc8_sgp40(p, 2);
+        if (crc != *(p + 2))
+        {
+            ESP_LOGE(TAG, "Invalid CRC 0x%02x, expected 0x%02x", crc, *(p + 2));
+            return ESP_ERR_INVALID_CRC;
+        }
+        data[i] = swap16_sgp40(*(uint16_t *)p);
+    }
+
+    return ret;
+#else
 
     i2c_device_config_t i2c_dev_conf = {
 //          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
@@ -2010,6 +2101,7 @@ static esp_err_t read_resp_sgp40(sgp40_t *dev, uint16_t *data, size_t words)
 
 //      return ESP_OK;
     return ret;
+#endif
 }
 
 
@@ -2072,6 +2164,46 @@ int get_SGP40_cmd_resp(sgp40_t *dev, int cmd, uint16_t *data, int words, int wai
 {
 	uint8_t sgp40_resp[10*3];
 
+	char i2c_cmd[2] ;
+	i2c_cmd[0] = (char)((cmd & 0xff00) >> 8);
+	i2c_cmd[1] = (char)((cmd & 0x00ff) >> 0);
+	hexdump3("SGP40 cmd packet", i2c_cmd, sizeof(i2c_cmd));
+
+#if I2C2__USING_GPIO
+    esp_err_t ret = soft_i2c_master_write(bus_i2c2_gpio, SGP40_ADDR, (uint8_t *)i2c_cmd, 2 );
+//  	ESP_GOTO_ON_ERROR(ret, error, "send_cmd_sgp40", "Error writing to I2C device");
+
+	vTaskDelay(pdMS_TO_TICKS(wait_ms));
+
+	ret = soft_i2c_master_read(bus_i2c2_gpio, SGP40_ADDR, (uint8_t*)sgp40_resp, words*(2+1));
+//  	ESP_GOTO_ON_ERROR(ret, error, "send_cmd_sgp40", "Error reading from I2C device");
+    if (ret == ESP_OK) 
+	{
+        ESP_LOGI(TAG, "SGP40 I2C Fead OK : Get Serial Num(Receive)");
+		hexdump3("SGP40_cmd_resp Raw data", sgp40_resp , words*(2+1));
+
+		for (size_t i = 0; i < words; i++)
+		{
+//  		    uint8_t *p = buf + i * 3;
+		    uint8_t *p = sgp40_resp + i * 3;
+		    uint8_t crc = crc8_sgp40(p, 2);
+		    if (crc != *(p + 2))
+		    {
+		        ESP_LOGE(TAG, "Invalid CRC 0x%02x, expected 0x%02x", crc, *(p + 2));
+		        return ESP_ERR_INVALID_CRC;
+		    }
+		    data[i] = swap16_sgp40(*(uint16_t *)p);
+		}
+    }
+	else
+	{
+		return -1;
+	}
+
+	return 0;
+#else
+	uint8_t sgp40_resp[10*3];
+
     i2c_device_config_t i2c_dev_conf = {
 //          .scl_speed_hz = 1000000 , // 1MHz //i2c_frequency,
         .scl_speed_hz = 100000 , // 100KHz //i2c_frequency,
@@ -2087,10 +2219,6 @@ int get_SGP40_cmd_resp(sgp40_t *dev, int cmd, uint16_t *data, int words, int wai
         return 1;
     }
 
-	char i2c_cmd[2] ;
-	i2c_cmd[0] = (char)((cmd & 0xff00) >> 8);
-	i2c_cmd[1] = (char)((cmd & 0x00ff) >> 0);
-	hexdump3("SGP40 cmd packet", i2c_cmd, sizeof(i2c_cmd));
     esp_err_t ret = i2c_master_transmit(dev_handle_i2c2, 
 	                                    (uint8_t *)i2c_cmd, 
 										2, 
@@ -2136,6 +2264,7 @@ int get_SGP40_cmd_resp(sgp40_t *dev, int cmd, uint16_t *data, int words, int wai
     }
 
 	return 0;
+#endif
 }
 
 esp_err_t sht4x_compute_values_shcho(sht4x_raw_data_t raw_data, float *temperature, float *humidity)
@@ -2277,6 +2406,22 @@ void i2c2_sensor_task(void *arg)
 	ZMOD_Reset_GPIO(1);
 
 	
+#if I2C2__USING_GPIO
+//      esp_err_t ret = ESP_OK;
+// 	    soft_i2c_master_bus_t bus = NULL;
+    soft_i2c_master_config_t config = {
+        .scl_pin = GPIO_I2C2_SCL,
+        .sda_pin = GPIO_I2C2_SDA,
+        .freq = SOFT_I2C_100KHZ
+    };
+
+    ESP_LOGW("i2c2_sensor_task", "--------------------- Initialize and configure the software I2C bus -----------------------");
+    ESP_LOGW("i2c2_sensor_task", "--------------------- Initialize and configure the software I2C bus -----------------------");
+    /* Initialize and configure the software I2C bus */
+    ESP_ERROR_CHECK(soft_i2c_master_new(&config, &bus_i2c2_gpio));
+
+	
+#endif
 
 	// 2. SHT4x
     memset(&dev_sht4x, 0, sizeof(dev_sht4x));
@@ -2291,6 +2436,7 @@ void i2c2_sensor_task(void *arg)
     dev_sgp40.i2c_dev.addr = SGP40_ADDR;
     dev_sgp40.i2c_dev.cfg.master.clk_speed = I2C2_FREQ_HZ;
 //  	ESP_ERROR_CHECK(sgp40_init_desc(&dev_sgp40, 0, 16, 15));
+
 
     sht4x_raw_data_t resp;
 
@@ -2454,7 +2600,7 @@ int Uart_mux_setup(int direction)
     return 1;
 }
 
-int gpio3_set_to_input_from_uart(void)
+int gpio3_set_to_input_from_uart(void) // GPIO_3 --> GPIO_8
 {
     gpio_config_t io_conf;
 
@@ -2500,6 +2646,241 @@ int ZMOD_Reset_GPIO(int val)
 
 
     return 1;
+}
+
+#define I2C2_DELAY	(10)
+void	i2c2_sda_input(void)
+{
+    gpio_config_t io_conf;
+	//---------------------------------------------------------
+	// SDA : 16 : INPUT_OUTPUT
+    io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
+    io_conf.pin_bit_mask = GPIO_I2C2_SDA;
+    //set as input mode
+//      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
+//                          0 으로만 읽힌다.
+    io_conf.mode = GPIO_MODE_INPUT;
+//      io_conf.mode = direction; //
+    //enable pull-up mode
+    io_conf.pull_up_en = 0; // 1 --> 0
+    io_conf.pull_down_en = 0; //NULL --> 0
+
+    gpio_config(&io_conf);
+	//---------------------------------------------------------
+
+}
+
+
+void I2C2_SCL_HI(void)
+{
+	gpio_set_level(GPIO_I2C2_SCL, 1);
+}
+
+void I2C2_SCL_LO(void)
+{
+	gpio_set_level(GPIO_I2C2_SCL, 0);
+}
+
+void I2C2_SDA_HI(void)
+{
+//  	i2c2_sda_input();
+}
+
+void I2C2_SDA_LO(void)
+{
+	gpio_set_level(GPIO_I2C2_SDA, 0);
+}
+
+int I2C2_SDA_IN(void)
+{
+	return gpio_get_level(GPIO_I2C2_SDA);
+}
+
+void I2C2_Start(void)
+{
+//  	ESP_LOGW("I2C2_Start", "Start begin");
+//  	I2C2_SDA_HI(); ets_delay_us(I2C2_DELAY );
+//  	I2C2_SCL_HI(); ets_delay_us(I2C2_DELAY );
+//  
+//  	I2C2_SDA_LO(); ets_delay_us(I2C2_DELAY );
+//  	I2C2_SCL_LO();
+//  	ESP_LOGW("I2C2_Start", "Start end");
+//  //      ets_delay_us(10 );
+//  //
+	ESP_LOGW("I2C2_Start", "Start begin");
+	I2C2_SDA_HI(); vTaskDelay(1);
+//  	I2C2_SCL_HI(); vTaskDelay(1);
+//  
+//  	I2C2_SDA_LO(); vTaskDelay(1);
+//  	I2C2_SCL_LO();
+	ESP_LOGW("I2C2_Start", "Start end");
+}
+
+void I2C2_Stop(void)
+{
+	I2C2_SDA_LO(); ets_delay_us(I2C2_DELAY );
+	I2C2_SCL_HI(); ets_delay_us(I2C2_DELAY );
+
+	I2C2_SDA_HI(); ets_delay_us(I2C2_DELAY );
+}
+
+void I2C2_write_bit(bool bit)
+{
+	if(bit)
+	{
+		I2C2_SDA_HI(); 
+	}
+	else
+	{
+		I2C2_SDA_LO(); 
+	}
+	ets_delay_us(I2C2_DELAY );
+	I2C2_SCL_HI(); ets_delay_us(I2C2_DELAY );
+	I2C2_SCL_LO(); ets_delay_us(I2C2_DELAY );
+}
+
+uint8_t I2C2_read_bit(void)
+{
+	uint8_t bit;
+
+	I2C2_SDA_HI(); ets_delay_us(I2C2_DELAY );
+	I2C2_SCL_HI(); ets_delay_us(I2C2_DELAY );
+	bit = (I2C2_SDA_IN() ? 1 : 0 );
+	I2C2_SCL_LO(); ets_delay_us(I2C2_DELAY );
+
+	return bit;
+}
+
+uint8_t I2C2_read_byte(bool ack)
+{
+	uint8_t byte = 0;
+
+	for( int bit = 0 ; bit < 8 ; ++bit)
+	{
+		byte = ( byte << 1 ) | I2C2_read_bit() ;
+	}
+
+	I2C2_write_bit(!ack);
+
+	return byte;
+}
+
+uint8_t I2C2_write_byte(uint8_t byte)
+{
+	for( int bit = 0 ; bit < 8 ; ++ bit)
+	{
+		I2C2_write_bit( (byte * 0x80 ) != 0);
+		byte <<=1 ;
+	}
+	bool nack = I2C2_read_bit(); // ack= sda low, nack = sda high
+
+	return (nack ? 1 : 0 ) ;
+}
+
+uint8_t I2C2_write(uint8_t *data, size_t n)
+{
+	size_t cnt = 0;
+	for( size_t i = 0 ; i < n ; i++)
+	{
+		cnt += I2C2_write_byte(data[i]);
+	}
+	return cnt;
+}
+
+uint8_t I2C2_endTransmission(bool sendStop)
+{
+	if( sendStop )
+	{
+		I2C2_Stop();
+	}
+	return i2c2_ack;
+
+}
+
+uint8_t I2C2_requestFrom(uint8_t address, uint8_t *i2c2_data, size_t len, bool stopBit)
+{
+	int i ;
+
+	I2C2_Start();
+	I2C2_write_byte( address<<1 | 1 ) ;
+	for( i = 0 ; i < len -1  ; i++)
+	{
+		i2c2_data[i] = I2C2_read_byte(true);
+	}
+	i2c2_data[i++] = I2C2_read_byte(false);
+
+	return i;
+}
+
+	
+uint8_t I2C2_beginTransmission(uint8_t address)
+{
+	ESP_LOGW("I2C2_beginTransmission", "I2C2_beginTransmission begin");
+	I2C2_Start();
+	i2c2_ack = I2C2_write_byte(address<<1);
+	ESP_LOGW("I2C2_beginTransmission", "I2C2_beginTransmission end");
+	return i2c2_ack;
+}
+
+//  esp_err_t i2c_master_transmit(i2c_master_dev_handle_t i2c_dev, const uint8_t *write_buffer, size_t write_size, int xfer_timeout_ms)
+//  esp_err_t ret = i2c_master_transmit(i2c_master_dev_handle_t i2c_dev, (uint8_t *)i2c_cmd, 2, I2C_TOOL_TIMEOUT_VALUE_MS);
+esp_err_t i2c2_master_transmit_gpio(uint8_t chip_address, uint8_t *write_buffer, size_t write_size)
+{
+	ESP_LOGW("i2c2_master_transmit_gpio", "i2c2_master_transmit_gpio begin");
+	int ret=0;
+	ret = I2C2_beginTransmission(chip_address);
+	if( ret != 0 )
+	{
+		ESP_LOGE("i2c2_master_transmit_gpio", "I2C2_beginTransmission(%d) : Error", ret);
+		return ret;
+	}
+	I2C2_write(write_buffer,write_size);
+	ESP_LOGW("i2c2_master_transmit_gpio", "i2c2_master_transmit_gpio end");
+	return 1;
+}
+
+
+void	i2c2_using_gpio_init(void)
+{
+
+    gpio_config_t io_conf_scl;
+    gpio_config_t io_conf_sda;
+
+	//---------------------------------------------------------
+	// SCL : 15 : OUTPUT
+    //interrupt of rising edge
+    io_conf_scl.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
+    io_conf_scl.pin_bit_mask = GPIO_I2C2_SCL;
+    //set as input mode
+//      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
+//                          0 으로만 읽힌다.
+    io_conf_scl.mode = GPIO_MODE_OUTPUT; //
+//      io_conf.mode = direction; //
+    //enable pull-up mode
+    io_conf_scl.pull_up_en = 0; // 1 --> 0
+    io_conf_scl.pull_down_en = 0; //NULL --> 0
+
+    gpio_config(&io_conf_scl);
+	//---------------------------------------------------------
+
+	//---------------------------------------------------------
+	// SDA : 16 : INPUT_OUTPUT
+    //interrupt of rising edge
+    io_conf_sda.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
+    //bit mask of the pins, use GPIO4/5 here
+    io_conf_sda.pin_bit_mask = GPIO_I2C2_SDA;
+    //set as input mode
+//      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
+//                          0 으로만 읽힌다.
+    io_conf_sda.mode = GPIO_MODE_INPUT_OUTPUT; //
+//      io_conf.mode = direction; //
+    //enable pull-up mode
+    io_conf_sda.pull_up_en = 0; // 1 --> 0
+    io_conf_sda.pull_down_en = 0; //NULL --> 0
+
+    gpio_config(&io_conf_sda);
+	//---------------------------------------------------------
+
 }
 
 
@@ -2648,6 +3029,19 @@ void app_main(void)
         .flags.enable_internal_pullup = true,
     };
 
+	#if I2C2__USING_GPIO
+//  	// I2C SCL(GPIO_OUTPUT: 15) / SDA(GPIO_INPUT_OUTPUT: 16)
+//  	i2c2_using_gpio_init();
+//  //  	uint8_t tmp_data[2];
+//  //  	tmp_data[0] = 0xAA ;
+//  //  	tmp_data[0] = 0x55 ;
+//  	while(1)
+//  	{
+//  //  		i2c2_master_transmit_gpio(SHT4X_I2C_ADDRESS, tmp_data, sizeof(tmp_data));
+//  		I2C2_Start();
+//          vTaskDelay(1000 / portTICK_PERIOD_MS);
+//  	}
+	#else
     i2c_master_bus_config_t i2c_bus_config_i2c2 = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = i2c_port_i2c2,
@@ -2656,29 +3050,38 @@ void app_main(void)
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
+	#endif
 
+#if 1 // I2C2__USE_GPIO_TEST
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
+
+    xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 8, NULL);
+
+	#if I2C2__USING_GPIO
+	#else
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c2, &tool_bus_handle_i2c2));
+	#endif
 
-    xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 1, NULL);
-
+//  	#if I2C2__USING_GPIO
+//      xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL); // Priority가 높다(너무 높아서 다른  Task가 동작하지 못했나 보다
+//  	#else
 //  //  	// i2c2_sensor_task를 실행하면 i2s_dpm Buffer가 고정된값으로만 읽힌다.
 //          // UART2도 동작하지 않나. GPIO3 --> GPIO8로 변경하면 동작하는데(GPIO3은 Input으로 하고, Jumper연결)
 //      xTaskCreate(i2c2_sensor_task, "i2c2_sensor", 4 * 1024, NULL, 8, NULL); // Priority가 높다(너무 높아서 다른  Task가 동작하지 못했나 보다
-//  //  
+//  	#endif
 
+//  	------------------------------------------------------------------------
+//  	i2c2_sensor_task를 실행하면 I2S read buffer에 같은 값만 찍힌다.
+
+	printf("I2S PDM RX example start\n---------------------------\n");
+	xTaskCreate(i2s_example_pdm_rx_task, "pdm_rx", 4096+2048, NULL, 1, NULL); // + 2048
+//  //  	TaskHandle_t pdm_rx_task;
+//  //  	xTaskCreatePinnedToCore(i2s_example_pdm_rx_task, "pdm_rx", 4096+2048, NULL, 1, &pdm_rx_task, 1);
 //  //  	------------------------------------------------------------------------
-//  //  	i2c2_sensor_task를 실행하면 I2S read buffer에 같은 값만 찍힌다.
-//  
-//  	printf("I2S PDM RX example start\n---------------------------\n");
-//  	xTaskCreate(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 4, NULL); // + 2048
-//  //  //  	TaskHandle_t pdm_rx_task;
-//  //  //  	xTaskCreatePinnedToCore(i2s_example_pdm_rx_task, "i2s_example_pdm_rx_task", 4096+2048, NULL, 1, &pdm_rx_task, 1);
-//  //  //  	------------------------------------------------------------------------
 
 
 //  	------------------------------------------------------------------------
-//      xTaskCreate(spi2_adc_task, "adc_task", 4 * 1024, NULL, 1, NULL);
+    xTaskCreate(spi2_adc_task, "adc_task", 4 * 1024, NULL, 8, NULL);
 //  	------------------------------------------------------------------------
 
 //  //  아래로 이동시켜봄
@@ -2741,6 +3144,6 @@ void app_main(void)
 
     // start console REPL
     ESP_ERROR_CHECK(esp_console_start_repl(repl));
-
+#endif // I2C__USE_GPIO_TEST
 
 }

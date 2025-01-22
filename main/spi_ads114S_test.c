@@ -502,7 +502,7 @@ void spi2_adc_task(void *arg)
     io_conf.pull_up_en = 1;
     gpio_config(&io_conf);
 
-	gpio9_set_to_input_from_spi_cs();
+	gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
 
     //create a queue to handle gpio event from isr
     gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
