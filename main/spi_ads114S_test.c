@@ -474,7 +474,7 @@ int gpio9_set_to_input_from_spi_cs(void) // 기존 GPIO9(SPI_CS)가 고장이라
     //interrupt of rising edge
     io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
     //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = 9;
+    io_conf.pin_bit_mask = (1ULL << 9);
     //set as input mode
 //      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
 //                          0 으로만 읽힌다.
@@ -495,7 +495,7 @@ void spi2_adc_task(void *arg)
     gpio_config_t io_conf = {};
     io_conf.intr_type = GPIO_INTR_NEGEDGE;
     //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = PIN_ADS114S_nRDY ; // ADS114S nRDY
+    io_conf.pin_bit_mask = (1ULL << PIN_ADS114S_nRDY) ; // ADS114S nRDY
     //set as input mode
     io_conf.mode = GPIO_MODE_INPUT;
     //enable pull-up mode

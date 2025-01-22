@@ -143,7 +143,7 @@ int PDM_LR_select(int pdm_select_val)
     //interrupt of rising edge
     io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
     //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = GPIO_PDM_LR_SELECT_PIN;
+    io_conf.pin_bit_mask = (1ULL << GPIO_PDM_LR_SELECT_PIN);
     //set as input mode
 //      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
 //                          0 으로만 읽힌다.

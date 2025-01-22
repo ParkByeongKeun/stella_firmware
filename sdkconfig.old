@@ -568,7 +568,7 @@ CONFIG_EXAMPLE_KEEPALIVE_COUNT=3
 #
 # Example SPI-ADC Configuration
 #
-CONFIG_EXAMPLE_INTR_USED=y
+# CONFIG_EXAMPLE_INTR_USED is not set
 # CONFIG_EXAMPLE_5V_COMMANDS is not set
 # end of Example SPI-ADC Configuration
 

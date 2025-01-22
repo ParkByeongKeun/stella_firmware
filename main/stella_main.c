@@ -168,6 +168,14 @@ static i2c_port_t i2c_port_i2c2 = I2C_NUM_1;
 
 #define STR_MATCH	(0)
 
+static sht4x_t dev_sht4x; //shcho add
+static sgp40_t dev_sgp40;
+#define I2C2_FREQ_HZ 400000
+uint8_t i2c2_ack = 0;
+//  uint8_t i2c2_data[100];
+
+#define G_POLYNOM_SHT4x 0x31
+
 
 int CO2_ppm;
 #define CO2_STATUS_NORMAL	(0x00)
@@ -1769,98 +1777,7 @@ void CO2_autozero_to_close(void)
 	do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
 }
 
-void i2c1_sensor_task(void *arg)
-{
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
 
-	if( flag_CO2_autozero_close_run != 0 ) 
-	{
-		ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-//  		내부에서 Take/Give한다.
-//  		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		CO2_autozero_to_close();
-//  		xSemaphoreGive(sema_i2c1);
-	}
-
-
-	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-
-		set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);
-	    vTaskDelay(5000 / portTICK_PERIOD_MS);
-		set_PM2008_mode(PM2008_CMD_SETUP_CONTINUOUS, 0xffff);
-	    vTaskDelay(2000 / portTICK_PERIOD_MS);
-	//  	set_PM2008_mode(PM2008_CMD_SETUP_TIMING_MEASURE, 180);
-	//      vTaskDelay(2000 / portTICK_PERIOD_MS);
-	xSemaphoreGive(sema_i2c1);
-
-
-	// ALS ( Ambient Light Sensor : Conf : integration 25msec )
-	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		als_conf_set(50); //이것을 무시하고 // SENS=1 DG=1 GAIN=1CO2_autozero_to_close it=100ms
-	xSemaphoreGive(sema_i2c1);
-
-
-	
-	while(1)
-	{
-		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		set_fan_pwm();
-		xSemaphoreGive(sema_i2c1);
-
-		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		do_get_CO2((int)NULL, (char**)NULL);
-		xSemaphoreGive(sema_i2c1);
-
-       	vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		do_get_PM2008((int)NULL, (char**)NULL);
-		xSemaphoreGive(sema_i2c1);
-
-		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		do_fan_report(); // register 를 읽어서 보냄 mode는 "PWM duty"로 고정
-		xSemaphoreGive(sema_i2c1);
-
-		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		do_get_als(); // 
-		xSemaphoreGive(sema_i2c1);
-
-		//이미 위에서 1로 변경되니까 1에서 시작하자
-		ESP_LOGW("check", "count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-		if( ((count_CO2_ppm_valid % 50) == 10) && ( flag_CO2_autozero_close_run != 0 ) )
-		{
-//  //  			char close[]="close";
-//  //  			char cali_day = "15";
-//  //  			char cali_ppm="400";
-//  			int argc = 4;
-//  			char *argv[4] = { "imsi", "close", "15", "400"} ;
-//  //  			argv[1] = close;
-//  //  			argv[2] = cali_day;
-//  //  			argv[3] = cali_ppm;
-//  
-//  			//내부에서 Sema Take하고 Release를 한다.
-//  			do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
-			CO2_autozero_to_close();
-		}
-
-       	vTaskDelay(10000 / portTICK_PERIOD_MS);
-
-
-
-
-	}
-}
-
-
-static sht4x_t dev_sht4x; //shcho add
-static sgp40_t dev_sgp40;
-#define I2C2_FREQ_HZ 400000
-uint8_t i2c2_ack = 0;
-//  uint8_t i2c2_data[100];
-
-#define G_POLYNOM_SHT4x 0x31
 
 static uint8_t crc8_sht4x(uint8_t data[], size_t len)
 {
@@ -2345,6 +2262,27 @@ static esp_err_t sgp40_measure_raw_shcho(sgp40_t *dev, float humidity, float tem
 
 }
 
+int gpio15_16_set_to_input(void) // GPIO_3 --> GPIO_8
+{
+    gpio_config_t io_conf;
+
+    // detect Is it Wearable : Static은 Pull-up :10K GPIO_38(MIX_A0) / GPIO_39(MUX_A0)
+    //interrupt of rising edge
+    io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
+    //bit mask of the pins, use GPIO4/5 here
+    io_conf.pin_bit_mask = ((1ULL << 15) | (1ULL << 16));
+    //set as input mode
+//      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
+//                          0 으로만 읽힌다.
+    io_conf.mode = GPIO_MODE_INPUT; //
+//      io_conf.mode = direction; //
+    //enable pull-up mode
+    io_conf.pull_up_en = 0; // 1 --> 0
+    io_conf.pull_down_en = 0; //NULL --> 0
+    gpio_config(&io_conf);
+
+    return 1;
+}
 
 int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
                   float temperature, float humidity, int voc_index )
@@ -2392,6 +2330,265 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
 	}
    	cJSON_Delete(root);
 	return 0;
+}
+
+void i2c1_sensor_task(void *arg)
+{
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+
+	if( flag_CO2_autozero_close_run != 0 ) 
+	{
+		ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+//  		내부에서 Take/Give한다.
+//  		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		CO2_autozero_to_close();
+//  		xSemaphoreGive(sema_i2c1);
+	}
+
+
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+
+		set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);
+	    vTaskDelay(5000 / portTICK_PERIOD_MS);
+		set_PM2008_mode(PM2008_CMD_SETUP_CONTINUOUS, 0xffff);
+	    vTaskDelay(2000 / portTICK_PERIOD_MS);
+	//  	set_PM2008_mode(PM2008_CMD_SETUP_TIMING_MEASURE, 180);
+	//      vTaskDelay(2000 / portTICK_PERIOD_MS);
+	xSemaphoreGive(sema_i2c1);
+
+
+	// ALS ( Ambient Light Sensor : Conf : integration 25msec )
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		als_conf_set(50); //이것을 무시하고 // SENS=1 DG=1 GAIN=1CO2_autozero_to_close it=100ms
+	xSemaphoreGive(sema_i2c1);
+
+
+
+
+
+
+
+//-------------------------------------------------------------------------------------------------
+	int flag_SHT4x_is_OK = 0 ;
+	int flag_SGP40_is_OK = 0 ;
+	// 1. ZMOD reset : Power on시에는  0x32가 보이다가  
+	//                 바로 사라짐
+	ZMOD_Reset_GPIO(0);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+//  	ZMOD_Reset_GPIO(1);
+
+	
+#if I2C2__USING_GPIO
+	gpio15_16_set_to_input();
+//      esp_err_t ret = ESP_OK;
+// 	    soft_i2c_master_bus_t bus = NULL;
+    soft_i2c_master_config_t config = {
+//          .scl_pin = GPIO_I2C2_SCL,
+//          .sda_pin = GPIO_I2C2_SDA,
+        .scl_pin = 14,
+        .sda_pin = 48,
+        .freq = SOFT_I2C_100KHZ
+    };
+
+    ESP_LOGW("i2c2_sensor_task", "--------------------- Initialize and configure the software I2C bus -----------------------");
+    ESP_LOGW("i2c2_sensor_task", "--------------------- Initialize and configure the software I2C bus -----------------------");
+    /* Initialize and configure the software I2C bus */
+    ESP_ERROR_CHECK(soft_i2c_master_new(&config, &bus_i2c2_gpio));
+
+	
+#endif
+
+	// 2. SHT4x
+    memset(&dev_sht4x, 0, sizeof(dev_sht4x));
+    dev_sht4x.i2c_dev.addr = SHT4X_I2C_ADDRESS;
+    dev_sht4x.i2c_dev.cfg.master.clk_speed = I2C2_FREQ_HZ;
+    dev_sht4x.repeatability = SHT4X_HIGH;
+    dev_sht4x.heater = SHT4X_HEATER_OFF;
+//  	ESP_ERROR_CHECK(sht4x_init_desc(&dev_sht4x, 0, 16, 15));
+
+	// 2. SGP40 : SHT4x등 온습도가 반드시 있어야 함
+    memset(&dev_sgp40, 0, sizeof(dev_sgp40));
+    dev_sgp40.i2c_dev.addr = SGP40_ADDR;
+    dev_sgp40.i2c_dev.cfg.master.clk_speed = I2C2_FREQ_HZ;
+//  	ESP_ERROR_CHECK(sgp40_init_desc(&dev_sgp40, 0, 16, 15));
+
+
+    sht4x_raw_data_t resp;
+
+
+	// 3. SHT4x Serial_num
+	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+
+		memset( resp, 0, sizeof(resp));
+		get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_SERIAL, resp, sizeof(resp));
+	    dev_sht4x.serial = ((uint32_t)resp[0] << 24) | ((uint32_t)resp[1] << 16) | ((uint32_t)resp[3] << 8) | resp[4];
+		ESP_LOGW(TAG, "SHT4x initilalized. Serial: %" PRIu32, dev_sht4x.serial);
+		get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_RESET, resp, 0);
+		if( dev_sht4x.serial != 0 )
+		{
+			flag_SHT4x_is_OK = 1 ; 
+		}
+
+	xSemaphoreGive(sema_i2c2);
+	
+	// 3. SGP40 Serial_num -> get featureset --> init VocAlgorithm
+	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+
+		get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_SERIAL, dev_sgp40.serial, 3, SGP40_TIME_SERIAL);
+		get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_FEATURESET, &dev_sgp40.featureset, 1, SGP40_TIME_FEATURESET);
+	    ESP_LOGW(TAG, "SGP40 initilalized. Serial: %04X_%04X_%04X featureset 0x%04x",
+	            dev_sgp40.serial[0], dev_sgp40.serial[1], dev_sgp40.serial[2], dev_sgp40.featureset);
+
+		if(    ( dev_sgp40.serial[0] != 0 ) 
+		    || ( dev_sgp40.serial[1] != 0 )
+		    || ( dev_sgp40.serial[2] != 0 ) )
+		{
+			flag_SGP40_is_OK = 1 ; 
+		}
+		VocAlgorithm_init(&dev_sgp40.voc);
+		hexdump3("Voc Algo init data", &dev_sgp40.voc , sizeof(dev_sgp40.voc));
+//  		No need : sgp40 example does not execute SOFT)RESET
+//  		get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_SOFT_RESET, NULL, 0, SGP40_TIME_SOFT_RESET);
+
+	xSemaphoreGive(sema_i2c2);
+
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+	float temperature, humidity;
+//-------------------------------------------------------------------------------------------------
+
+
+
+	
+	while(1)
+	{
+		{
+			if( flag_SHT4x_is_OK != 1 )
+			{
+				ESP_LOGE("SHT4x", "Serial Num is not valid");
+				// 3. SHT4x Serial_num
+				xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+			
+					memset( resp, 0, sizeof(resp));
+					get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_SERIAL, resp, sizeof(resp));
+				    dev_sht4x.serial = ((uint32_t)resp[0] << 24) | ((uint32_t)resp[1] << 16) | ((uint32_t)resp[3] << 8) | resp[4];
+					ESP_LOGW(TAG, "SHT4x initilalized. Serial: %" PRIu32 "(again)", dev_sht4x.serial);
+					get_SHT4x_cmd_resp(&dev_sht4x, SHT4X_CMD_RESET, resp, 0);
+					if( dev_sht4x.serial != 0 )
+					{
+						flag_SHT4x_is_OK = 1 ; 
+					}
+			
+				xSemaphoreGive(sema_i2c2);
+			}
+		
+			if( flag_SGP40_is_OK != 1 )
+			{
+				ESP_LOGE("SGP40", "Serial Num is not valid");
+				// 3. SGP40 Serial_num -> get featureset --> init VocAlgorithm
+				xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+			
+					get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_SERIAL, dev_sgp40.serial, 3, SGP40_TIME_SERIAL);
+					get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_FEATURESET, &dev_sgp40.featureset, 1, SGP40_TIME_FEATURESET);
+				    ESP_LOGW(TAG, "SGP40 initilalized. Serial: %04X_%04X_%04X featureset 0x%04x",
+				            dev_sgp40.serial[0], dev_sgp40.serial[1], dev_sgp40.serial[2], dev_sgp40.featureset);
+	
+					if(    ( dev_sgp40.serial[0] != 0 ) 
+					    || ( dev_sgp40.serial[1] != 0 )
+					    || ( dev_sgp40.serial[2] != 0 ) )
+					{
+						flag_SGP40_is_OK = 1 ; 
+					}
+					else
+					{
+					    ESP_LOGW(TAG, "SGP40 initilalized. Serial: %04X_%04X_%04X featureset 0x%04x ( invalid Serial_num )",
+					            dev_sgp40.serial[0], dev_sgp40.serial[1], dev_sgp40.serial[2], dev_sgp40.featureset);
+					}
+					VocAlgorithm_init(&dev_sgp40.voc);
+					hexdump3("Voc Algo init data again", &dev_sgp40.voc , sizeof(dev_sgp40.voc));
+			//  		No need : sgp40 example does not execute SOFT)RESET
+			//  		get_SGP40_cmd_resp(&dev_sgp40, SGP40_CMD_SOFT_RESET, NULL, 0, SGP40_TIME_SOFT_RESET);
+			
+				xSemaphoreGive(sema_i2c2);
+			}
+	
+			if( flag_SHT4x_is_OK == 1 && flag_SGP40_is_OK == 1 )
+			{
+				// 4. 온습도
+				xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+					get_SHT4x_cmd_resp(&dev_sht4x, get_meas_cmd(&dev_sht4x), resp, sizeof(resp));
+				xSemaphoreGive(sema_i2c2);
+		
+		    	sht4x_compute_values_shcho(resp, &temperature, &humidity);
+				ESP_LOGW("sht4x Sensor", " %.2f °C, %.2f %%\n", temperature, humidity);
+		
+				// 5. 온습도 --> VOC Index
+				int32_t voc_index;
+				xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+					sgp40_measure_voc_shcho(&dev_sgp40, humidity, temperature, &voc_index);
+				xSemaphoreGive(sema_i2c2);
+		
+				ESP_LOGI(TAG, "%.2f °C, %.2f %%, VOC index: %3" PRIi32 ", Air is [%s]",
+							temperature, humidity, voc_index, voc_index_name(voc_index));
+		
+				do_rht_voc_report(&dev_sht4x, &dev_sgp40, temperature, humidity, voc_index );
+			}
+	
+	
+//  	       	vTaskDelay(10000 / portTICK_PERIOD_MS);
+	       	vTaskDelay(1000 / portTICK_PERIOD_MS);
+		}
+
+
+
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		set_fan_pwm();
+		xSemaphoreGive(sema_i2c1);
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		do_get_CO2((int)NULL, (char**)NULL);
+		xSemaphoreGive(sema_i2c1);
+
+       	vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		do_get_PM2008((int)NULL, (char**)NULL);
+		xSemaphoreGive(sema_i2c1);
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		do_fan_report(); // register 를 읽어서 보냄 mode는 "PWM duty"로 고정
+		xSemaphoreGive(sema_i2c1);
+
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+		do_get_als(); // 
+		xSemaphoreGive(sema_i2c1);
+
+		//이미 위에서 1로 변경되니까 1에서 시작하자
+		ESP_LOGW("check", "count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+		if( ((count_CO2_ppm_valid % 50) == 10) && ( flag_CO2_autozero_close_run != 0 ) )
+		{
+//  //  			char close[]="close";
+//  //  			char cali_day = "15";
+//  //  			char cali_ppm="400";
+//  			int argc = 4;
+//  			char *argv[4] = { "imsi", "close", "15", "400"} ;
+//  //  			argv[1] = close;
+//  //  			argv[2] = cali_day;
+//  //  			argv[3] = cali_ppm;
+//  
+//  			//내부에서 Sema Take하고 Release를 한다.
+//  			do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
+			CO2_autozero_to_close();
+		}
+
+       	vTaskDelay(10000 / portTICK_PERIOD_MS);
+
+
+
+
+	}
 }
 
 
@@ -2608,7 +2805,7 @@ int gpio3_set_to_input_from_uart(void) // GPIO_3 --> GPIO_8
     //interrupt of rising edge
     io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
     //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = 3;
+    io_conf.pin_bit_mask = (1ULL<<3);
     //set as input mode
 //      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
 //                          0 으로만 읽힌다.
@@ -2631,7 +2828,7 @@ int ZMOD_Reset_GPIO(int val)
     //interrupt of rising edge
     io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
     //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = GPIO_ZMOD_RESET; // 45
+    io_conf.pin_bit_mask = (1ULL<< GPIO_ZMOD_RESET); // 45
     //set as input mode
 //      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
 //                          0 으로만 읽힌다.
@@ -2655,7 +2852,7 @@ void	i2c2_sda_input(void)
 	//---------------------------------------------------------
 	// SDA : 16 : INPUT_OUTPUT
     io_conf.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
-    io_conf.pin_bit_mask = GPIO_I2C2_SDA;
+    io_conf.pin_bit_mask = (1ULL << GPIO_I2C2_SDA);
     //set as input mode
 //      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
 //                          0 으로만 읽힌다.
@@ -2850,7 +3047,7 @@ void	i2c2_using_gpio_init(void)
 	// SCL : 15 : OUTPUT
     //interrupt of rising edge
     io_conf_scl.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
-    io_conf_scl.pin_bit_mask = GPIO_I2C2_SCL;
+    io_conf_scl.pin_bit_mask = (1ULL << GPIO_I2C2_SCL);
     //set as input mode
 //      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
 //                          0 으로만 읽힌다.
@@ -2868,7 +3065,7 @@ void	i2c2_using_gpio_init(void)
     //interrupt of rising edge
     io_conf_sda.intr_type = GPIO_INTR_DISABLE; // GPIO_INTR_POSEDGE -->GPIO_INTR_DISABLE
     //bit mask of the pins, use GPIO4/5 here
-    io_conf_sda.pin_bit_mask = GPIO_I2C2_SDA;
+    io_conf_sda.pin_bit_mask = (1ULL << GPIO_I2C2_SDA);
     //set as input mode
 //      io_conf.mode = GPIO_MODE_INPUT_OUTPUT; // GPIO_MODE_INPUT --> GPIO_MODE_INPUT_OUTPUT
 //                          0 으로만 읽힌다.
@@ -3055,7 +3252,8 @@ void app_main(void)
 #if 1 // I2C2__USE_GPIO_TEST
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
 
-    xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 8, NULL);
+//      xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 8, NULL);
+    xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 8 * 1024, NULL, 8, NULL);
 
 	#if I2C2__USING_GPIO
 	#else
