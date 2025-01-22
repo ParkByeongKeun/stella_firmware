@@ -2381,14 +2381,14 @@ void i2c1_sensor_task(void *arg)
 
 	
 #if I2C2__USING_GPIO
-	gpio15_16_set_to_input();
+//  	gpio15_16_set_to_input();
 //      esp_err_t ret = ESP_OK;
 // 	    soft_i2c_master_bus_t bus = NULL;
     soft_i2c_master_config_t config = {
-//          .scl_pin = GPIO_I2C2_SCL,
-//          .sda_pin = GPIO_I2C2_SDA,
-        .scl_pin = 14,
-        .sda_pin = 48,
+        .scl_pin = GPIO_I2C2_SCL,
+        .sda_pin = GPIO_I2C2_SDA,
+//          .scl_pin = 14,
+//          .sda_pin = 48,
         .freq = SOFT_I2C_100KHZ
     };
 
