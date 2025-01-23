@@ -70,10 +70,10 @@ static const char *JSON_TAG = "JSON";
 
 #  define ADS114S_SPI_HOST       SPI2_HOST
 
-//  #  define PIN_NUM_CS    9
+#  define PIN_NUM_CS    9
 //  #  define PIN_NUM_CS   20 // SPI2_CS가 ADS114S가 뜨거워지면서 죽은것 같다. 
 //                               --> wearable에서는 USB D+라서 GPIO5로 변경함
-#  define PIN_NUM_CS        5 // 
+//  #  define PIN_NUM_CS        5 // 
 
 #  define PIN_NUM_CLK       10
 #  define PIN_NUM_MISO      11
@@ -111,6 +111,7 @@ static QueueHandle_t gpio_evt_queue = NULL;
 static const char TAG[] = "ADS114S";
 //  static const char TAG[] = "main";
 extern void hexdump3(char *title, void *pack, size_t size) ;
+int gpio9_set_to_input_from_spi_cs(void);// 기존 GPIO9(SPI_CS)가 고장이라서 Port를 변경함
 
 
 static esp_err_t ads114s_wait_done_by_intr(ads114s_context_t* ctx)
@@ -217,6 +218,13 @@ esp_err_t spi_ads114s_init(const ads114s_config_t *cfg, ads114s_context_t** out_
         .post_cb = cs_high,
 //          .input_delay_ns = ADS114S_INPUT_DELAY_NS,  //the ads114s output the data half a SPI clock behind.
     };
+
+	if ( flag_IS_WEARABLE == 0 ) 
+	{
+		gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
+		devcfg.spics_io_num = 5 ;  // 9(PIN_NUM_CS)->5
+	}
+
     //Attach the ads114s to the SPI bus
     err = spi_bus_add_device(ctx->cfg.host, &devcfg, &ctx->spi);
     if (err != ESP_OK) {
@@ -502,7 +510,7 @@ void spi2_adc_task(void *arg)
     io_conf.pull_up_en = 1;
     gpio_config(&io_conf);
 
-	gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
+//  //  	gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
 
     //create a queue to handle gpio event from isr
     gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
@@ -546,6 +554,12 @@ void spi2_adc_task(void *arg)
         .host = ADS114S_SPI_HOST,
         .miso_io = PIN_NUM_MISO,
     };
+
+	if ( flag_IS_WEARABLE == 0 )  // Static : 시험용은 GPIO9가 고장나서
+	{
+		gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
+		ads114s_config.cs_io = 5 ;  // 9(PIN_NUM_CS)->5
+	}
 #ifdef CONFIG_EXAMPLE_INTR_USED
     ads114s_config.intr_used = true;
 //      gpio_install_isr_service(0);

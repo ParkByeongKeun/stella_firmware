@@ -115,7 +115,10 @@ soft_i2c_master_bus_t bus_i2c2_gpio = NULL;
 
 int flag_CO2_sensor_OK = 0 ;
 int flag_IS_WEARABLE = 0 ;
-int flag_USE_W5500_Ethernet = 1 ;
+
+//  int flag_USE_W5500_Ethernet = 1 ; // 환경부 인증용, Sensor Board SPI를 W5500으로 사용할때
+int flag_USE_W5500_Ethernet = 0 ;
+
 int ZMOD_Reset_GPIO(int val);
 
 
@@ -133,6 +136,7 @@ extern void app_main_task_oled(void *arg);
 extern void app_main_tcp_server(int port);
 
 extern void spi2_adc_task(void *arg);
+extern void app_main_stella_uart2_GPS(void);
 
 static int do_esp32_fan_ctrl(int argc, char **argv) ;
 
@@ -3210,11 +3214,15 @@ void app_main(void)
 		//CM4에 신고하기 위해서 가장 먼저 Enable되어야 한다.
 		app_main_stella_uart2(); // send to CM4
 	}
-
-	if( flag_USE_W5500_Ethernet == 1 ) 
+	else
 	{
-		app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A / and ZE08
+		app_main_stella_uart2_GPS(); 
 	}
+
+//  	if( flag_USE_W5500_Ethernet == 1 ) 
+//  	{
+		app_main_stella_uart1(); // get sensor data // using mux_ctrl // thread for RS9A / and ZE08
+//  	}
 
 
     i2c_master_bus_config_t i2c_bus_config_i2c1 = {
@@ -3279,7 +3287,10 @@ void app_main(void)
 
 
 //  	------------------------------------------------------------------------
-    xTaskCreate(spi2_adc_task, "adc_task", 4 * 1024, NULL, 8, NULL);
+	if( flag_USE_W5500_Ethernet == 0 ) 
+	{
+	    xTaskCreate(spi2_adc_task, "adc_task", 4 * 1024, NULL, 8, NULL);
+	}
 //  	------------------------------------------------------------------------
 
 //  //  아래로 이동시켜봄

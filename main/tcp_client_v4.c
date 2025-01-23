@@ -96,7 +96,7 @@ int send_to_server(char *payload, int len)
 		uint16_t port;
 	
 	    int addr_family = 0;
-	    int ip_protocol = 0;
+	;    int ip_protocol = 0;
 	
 		//============================================================
 		memset(rx_buffer, 0, sizeof(rx_buffer));
@@ -185,7 +185,7 @@ int send_to_server(char *payload, int len)
 	    }
 	
 	}
-	else
+	else // 이제는 BT로 보낼까? // 자체 DB에 저장????
 	{
 		// test : just return
 		ret = 0 ;

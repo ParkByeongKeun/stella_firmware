@@ -583,10 +583,15 @@ static void uart_select_task_uart1(void *arg)
 			xSemaphoreGive(sema_uart1);
 			vTaskDelay(5000 / portTICK_PERIOD_MS);
 		}
+//  		else if( ((order % 2  == 1) && (flag_USE_W5500_Ethernet == 0)) || ( flag_IS_WEARABLE == 0) )  // ZE08
 		else if( ((order % 2  == 1) && (flag_USE_W5500_Ethernet == 0)) || ( flag_IS_WEARABLE == 0) )  // ZE08
 		{
 //  			uart_config = &uart_config_RS9A;
-			uart_mux_select(MUX_SEL_ZE08);
+			if( flag_IS_WEARABLE == 0 )
+			{
+				uart_mux_select(MUX_SEL_ZE08);
+			}
+
 		    uart_param_config(UART_NUM_1, &uart_config_ZE08);
 			uart_set_pin(UART_NUM_1, 17, 18, -1, -1);   // NUM_1 for Sensor
 
@@ -650,35 +655,44 @@ static void uart_select_task_uart1(void *arg)
 
 					memset((char *)&ZE08_CH2O_data, 0, sizeof(ZE08_CH2O_data));
 					memset((char *)tmp_buf, 0, sizeof(tmp_buf));
+					int sum_read = 0 ;
 					while(residue > 0 ) 
 					{
 						int len_read = 0;
 		
-			            len_read = read(fd_uart1, &tmp_buf[9 - residue], residue) ;
-						residue -= len_read;
+//  			            len_read = read(fd_uart1, &tmp_buf[9 - residue], residue) ;
+			            len_read = read(fd_uart1, &tmp_buf[sum_read], residue) ;
 
-						ESP_LOGW("shcho", "len_read=%d :  from ZE08", len_read);
-
-			            if (len_read > 0 && residue == 0 )
+						if( len_read > 0 )
 						{
-							memcpy((char *)&ZE08_CH2O_data, tmp_buf, sizeof(ZE08_CH2O_data));
-							hexdump3("ZE08 reply", &ZE08_CH2O_data, len_read);	
-							ESP_LOGW("ZE08 data", "ug/m^3 = %d, ppb = %d", htons(ZE08_CH2O_data.ug_per_m3), 
-	                                                                       htons(ZE08_CH2O_data.ppb));
-							uint8_t cks = calc_ZE08_cks((char *)&ZE08_CH2O_data);
-							ESP_LOGW("ZE08 cks", "cks_calc= %02x, cks = %02x", cks, ZE08_CH2O_data.cks ); 
-							if(    ( ZE08_CH2O_data.start == 0xff  )
-							   &&  ( ZE08_CH2O_data.cmd   == 0x86  ) 
-							   &&  ( cks == ZE08_CH2O_data.cks ) ) 
+							residue  -= len_read;
+							sum_read += len_read;
 
+
+							ESP_LOGW("shcho", "len_read=%d :  from ZE08", len_read);
+	
+//  				            if (len_read > 0 && residue == 0 )
+				            if ( residue == 0 )
 							{
-								send_ZE08_data(&ZE08_CH2O_data);
-							}
+								memcpy((char *)&ZE08_CH2O_data, tmp_buf, sizeof(ZE08_CH2O_data));
+								hexdump3("ZE08 reply", &ZE08_CH2O_data, len_read);	
+								ESP_LOGW("ZE08 data", "ug/m^3 = %d, ppb = %d", htons(ZE08_CH2O_data.ug_per_m3), 
+		                                                                       htons(ZE08_CH2O_data.ppb));
+								uint8_t cks = calc_ZE08_cks((char *)&ZE08_CH2O_data);
+								ESP_LOGW("ZE08 cks", "cks_calc= %02x, cks = %02x", cks, ZE08_CH2O_data.cks ); 
+								if(    ( ZE08_CH2O_data.start == 0xff  )
+								   &&  ( ZE08_CH2O_data.cmd   == 0x86  ) 
+								   &&  ( cks == ZE08_CH2O_data.cks ) ) 
+	
+								{
+									send_ZE08_data(&ZE08_CH2O_data);
+								}
 
+							}
 			            } 
 						else 
 						{
-				            ESP_LOGE(TAG, "UART read error");
+				            ESP_LOGE("ZE08", "UART read error");
 							break;
 			            }
 					}
@@ -795,6 +809,14 @@ void app_main_stella_uart1(void)
     xTaskCreate(uart_select_task_uart1, "task_uart1", 4 * 1024, NULL, 8, NULL);
 }
 extern int gpio3_set_to_input_from_uart(void);
+void app_main_stella_uart2_GPS(void)
+{
+	ESP_LOGW("app_main_stella_uart2_GPS", "To do............................");
+	ESP_LOGW("app_main_stella_uart2_GPS", "To do............................");
+	ESP_LOGW("app_main_stella_uart2_GPS", "To do............................");
+	ESP_LOGW("app_main_stella_uart2_GPS", "To do............................");
+	return;
+}
 void app_main_stella_uart2(void)
 {
 	xSemaphoreTake(sema_uart2, portMAX_DELAY);
@@ -817,11 +839,11 @@ void app_main_stella_uart2(void)
     uart_param_config(UART_NUM_2, &uart_config);
 
 	//-------------------------------------------------------------------------
-//  	uart_set_pin(UART_NUM_2, 3, 46, -1, -1);   // NUM_2 for Sensor
-	// NUM_2 for Sensor // CM4 4,5 a0로 해서 충돌로 Port가 고장났는지 확인용
-	gpio3_set_to_input_from_uart(); // original  UART2_TX --> GPIO input
-	uart_set_pin(UART_NUM_2, 8, 46, -1, -1);   
-	//-------------------------------------------------------------------------
+	uart_set_pin(UART_NUM_2, 3, 46, -1, -1);   // NUM_2 for Sensor
+//  	// NUM_2 for Sensor // CM4 4,5 a0로 해서 충돌로 Port가 고장났는지 확인용
+//  	gpio3_set_to_input_from_uart(); // original  UART2_TX --> GPIO input
+//  	uart_set_pin(UART_NUM_2, 8, 46, -1, -1);   
+//  	//-------------------------------------------------------------------------
 
 	if ((fd_uart2 = open("/dev/uart/2", O_RDWR)) == -1) 
 	{
