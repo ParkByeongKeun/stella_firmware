@@ -134,6 +134,7 @@ extern void tcp_client_task(void* arg);
 extern int send_to_server(char *payload, int len);
 extern void app_main_task_oled(void *arg);
 extern void app_main_tcp_server(int port);
+extern void app_main_nimble_sec(void) ;
 
 extern void spi2_adc_task(void *arg);
 extern void app_main_stella_uart2_GPS(void);
@@ -179,6 +180,9 @@ uint8_t i2c2_ack = 0;
 //  uint8_t i2c2_data[100];
 
 #define G_POLYNOM_SHT4x 0x31
+
+MessageBufferHandle_t passkey_msg_handle;
+const size_t passkey_msg_bytes  = sizeof(size_t) + sizeof(uint32_t); // one size_t for buffer index, another size_t for MessageBuffer overhead
 
 
 int CO2_ppm;
@@ -3116,8 +3120,8 @@ void app_main(void)
 	xSemaphoreGive(sema_tcp);
 	xSemaphoreGive(sema_spi_ads114s);
 
-	// 0. ---- LED ctrl
-    xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);
+//  	// 0. ---- LED ctrl
+//      xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);
 
 	//shcho
 	test_json();
@@ -3136,6 +3140,16 @@ void app_main(void)
     {
         flag_IS_WEARABLE = 1 ;
         ESP_LOGW("shcho", "This Board is Wearable(%d): No UART_MUX(UART1) / No CM4 Communication(UART2)", flag_IS_WEARABLE);
+
+		// 0. ---- LED ctrl
+	    xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);
+//  		Battery Power On시에 OLED에 표시가 없음
+//  		// -------------------------------------------------------------
+//  		// I2C를 사용하고 완전히 삭제한다.
+//  		app_main_task_oled(NULL);
+//  //  		// ========= i2c 이후로 이동해야 하고, OLED가 계속 i2c를 붙잡고 있어서 Release할 수 있도록 해야 함.===
+//  //  	    xTaskCreate(app_main_task_oled, "oled", 4 * 1024, NULL, 5, NULL);
+//  		// -------------------------------------------------------------
 
 
 		if( flag_USE_W5500_Ethernet == 1 ) 
@@ -3199,13 +3213,26 @@ void app_main(void)
 		ESP_LOGW("nvs_relate", "flag_CO2_autozero_close_run=%d", flag_CO2_autozero_close_run);
 		ESP_LOGW("nvs_relate", "flag_CO2_autozero_close_run=%d", flag_CO2_autozero_close_run);
 	}
+	//--------------------------------------------------------------
 	
+	//--------------------------------------------------------------
     if ( flag_IS_WEARABLE == 1 )
 	{
-//  	    xTaskCreate(app_main_task_oled, "oled", 4 * 1024, NULL, 5, NULL);
+
+	    passkey_msg_handle = xMessageBufferCreate( passkey_msg_bytes );
+	    assert(passkey_msg_handle);
+
+		//여기서 Delay가 있어야 OLED가 동작한다. : 5V 가 늦게 On되나???
+       	vTaskDelay(1000 / portTICK_PERIOD_MS);
+		// -------------------------------------------------------------
 		// I2C를 사용하고 완전히 삭제한다.
 		app_main_task_oled(NULL);
+//  		// ========= i2c 이후로 이동해야 하고, OLED가 계속 i2c를 붙잡고 있어서 Release할 수 있도록 해야 함.===
+//  	    xTaskCreate(app_main_task_oled, "oled", 4 * 1024, NULL, 5, NULL);
+		// -------------------------------------------------------------
        	vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+		app_main_nimble_sec();
 	}
 	//--------------------------------------------------------------
 

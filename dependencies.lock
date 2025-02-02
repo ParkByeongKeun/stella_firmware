@@ -17,6 +17,16 @@ dependencies:
       path: C:\Espressif\frameworks\esp-idf-v5.3.2\examples\system\console\advanced\components\cmd_wifi
       type: local
     version: '*'
+  espressif/led_strip:
+    component_hash: 28c6509a727ef74925b372ed404772aeedf11cce10b78c3f69b3c66799095e2d
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.5.5
   idf:
     source:
       type: idf
@@ -31,7 +41,8 @@ direct_dependencies:
 - cmd_nvs
 - cmd_system
 - cmd_wifi
+- espressif/led_strip
 - protocol_examples_common
-manifest_hash: ac414a73511ff920e675576d438eb1d385cdc0848ab8f7ec5bc7eea12aa9b5ee
+manifest_hash: bde43154ea688482770fa60e02dd6328fba6f8bb5ce07f6b5a655182905d4a1f
 target: esp32s3
 version: 2.0.0

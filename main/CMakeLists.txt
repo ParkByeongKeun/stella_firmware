@@ -12,6 +12,7 @@ if(CONFIG_SOC_I2S_SUPPORTS_PDM_RX AND CONFIG_EXAMPLE_PDM_RX)
     list(APPEND srcs_i2s_pdm "i2s_pdm_rx.c")
 endif()
 
+file(GLOB_RECURSE srcs_nimble_sec "nimble_security.c" "src_nimble_sec/*.c")
 
 idf_component_register(SRCS "stella_main.c"
                             "stella_uart.c"
@@ -25,9 +26,10 @@ idf_component_register(SRCS "stella_main.c"
 							"tcp_server.c"
 							"spi_ads114S_test.c"
 							"./esp32-fft/components/fft/fft.c"
-							"nimble_security.c" "src_nimble_sec/*.c"
 							"${srcs_i2s_pdm}"
+							"${srcs_nimble_sec}"
                        INCLUDE_DIRS "."
+					   		 "./include"
 					         "./esp32-fft/components/fft/include"
 					   REQUIRES ${requires}  )
 

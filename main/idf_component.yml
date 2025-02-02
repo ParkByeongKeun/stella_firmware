@@ -7,3 +7,12 @@ dependencies:
     path: ${IDF_PATH}/examples/system/console/advanced/components/cmd_wifi
   protocol_examples_common:
     path: ${IDF_PATH}/examples/common_components/protocol_examples_common
+  espressif/led_strip: "^2.4.1"
+
+
+#  espressif/led_strip: "^2.4.1"
+#
+#      ERROR: Cannot process component requirements.  Multiple candidates to
+#  satisfy project requirements:
+#
+#    requirement: "led_strip" candidates: "espressif__led_strip, led_strip"

@@ -26,6 +26,7 @@
 
 #define tag "SSD1306"
 
+extern MessageBufferHandle_t passkey_msg_handle;
 char *Stella_Tag="STELLA OLED";
 
 //  void app_main(void)
@@ -37,6 +38,7 @@ void app_main_task_oled(void *arg)
 	char lineChar[20];
 #endif
 
+//----------------------------------------------------------------------
 // 이 Example은 I2C를 계속 붙잡고 있어서 일단 한번만 수행해서
 // Display만 하는 것으로 하고 나중에 수정한다.
 #if CONFIG_I2C_INTERFACE
@@ -46,6 +48,17 @@ void app_main_task_oled(void *arg)
 	ESP_LOGW(tag, "CONFIG_RESET_GPIO=%d",CONFIG_RESET_GPIO);
 	i2c_master_init(&dev, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO, CONFIG_RESET_GPIO);
 #endif // CONFIG_I2C_INTERFACE
+//
+//
+//  //======================================================================
+//  	dev._address = I2C_ADDRESS_SSD1306;
+//  	dev._flip = false;
+//  	dev._i2c_num = I2C_NUM;
+//  	dev._i2c_bus_handle = i2c_bus_handle;
+//  //  //  	dev->_i2c_bus_handle = tool_bus_handle_i2c1; //shcbo test
+//  	dev._i2c_dev_handle = i2c_dev_handle;
+//  //
+//----------------------------------------------------------------------
 
 #if CONFIG_FLIP
 	dev._flip = true;
@@ -127,8 +140,16 @@ void app_main_task_oled(void *arg)
 //  		                                    123456789012345678901234567890123456789012
 
 //  	ssd1306_display_text_box1(&dev, 3, 24, "Sensing...->Send to Server...             ", 12, 42, false, 5);
-	ssd1306_display_text_box1(&dev, 2, 8, "Sensing->Server",  15, 15, false, 5);
+		ssd1306_display_text_box1(&dev, 2, 8, "Sensing->Server",  15, 15, false, 5);
 		ESP_LOGI("shcho", " OLED loop ");
+
+//  		uint32_t passkey;
+//          size_t rx_bytes = xMessageBufferReceive( passkey_msg_handle, (void*)(&passkey), sizeof(passkey), portMAX_DELAY );
+//          assert(rx_bytes == sizeof(uint32_t));
+//  		char tmp_buf[20];
+//  		sprintf(tmp_buf,"passkey:%" PRIu32,  passkey);
+//  		ssd1306_display_text_box1(&dev, 3, 10, tmp_buf,  15, 15, false, 5);
+
 
 	} // end while
 	#endif
