@@ -3141,8 +3141,10 @@ void app_main(void)
         flag_IS_WEARABLE = 1 ;
         ESP_LOGW("shcho", "This Board is Wearable(%d): No UART_MUX(UART1) / No CM4 Communication(UART2)", flag_IS_WEARABLE);
 
-		// 0. ---- LED ctrl
-	    xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);
+//  		// 0. ---- LED ctrl
+//  	    xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);
+//
+//  	    여기는 너무빠름
 //  		Battery Power On시에 OLED에 표시가 없음
 //  		// -------------------------------------------------------------
 //  		// I2C를 사용하고 완전히 삭제한다.
@@ -3223,18 +3225,27 @@ void app_main(void)
 	    assert(passkey_msg_handle);
 
 		//여기서 Delay가 있어야 OLED가 동작한다. : 5V 가 늦게 On되나???
-       	vTaskDelay(1000 / portTICK_PERIOD_MS);
+       	vTaskDelay(2000 / portTICK_PERIOD_MS);
 		// -------------------------------------------------------------
 		// I2C를 사용하고 완전히 삭제한다.
 		app_main_task_oled(NULL);
 //  		// ========= i2c 이후로 이동해야 하고, OLED가 계속 i2c를 붙잡고 있어서 Release할 수 있도록 해야 함.===
 //  	    xTaskCreate(app_main_task_oled, "oled", 4 * 1024, NULL, 5, NULL);
 		// -------------------------------------------------------------
-       	vTaskDelay(1000 / portTICK_PERIOD_MS);
+       	vTaskDelay(2000 / portTICK_PERIOD_MS);
 
+		app_main_nimble_sec(); // Static / Wearable모두에서 실행
+	}
+	else
+	{
+		//--------------------------------------------------------------
+		//
+		passkey_msg_handle = xMessageBufferCreate( passkey_msg_bytes );
+		assert(passkey_msg_handle);
+	    vTaskDelay(1000 / portTICK_PERIOD_MS);
+	
 		app_main_nimble_sec();
 	}
-	//--------------------------------------------------------------
 
 	if( flag_IS_WEARABLE == 0 ) //Static Main
 	{

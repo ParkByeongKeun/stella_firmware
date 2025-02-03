@@ -103,7 +103,7 @@ void app_main_task_oled(void *arg)
 	// 3.3V를 연결하면 화면이 점점 어두워 진다.
 	ssd1306_clear_screen(&dev, false);
 	ssd1306_contrast(&dev, 0xff);
-	ssd1306_display_text_box1(&dev, 1, 8, "STELLA WEARABLE",            15, 15, false, 5);
+	ssd1306_display_text_box1(&dev, 1, 4, "STELLA WEARABLE",            15, 15, false, 5);
 //  	while(1) 
 	{
 
@@ -140,7 +140,7 @@ void app_main_task_oled(void *arg)
 //  		                                    123456789012345678901234567890123456789012
 
 //  	ssd1306_display_text_box1(&dev, 3, 24, "Sensing...->Send to Server...             ", 12, 42, false, 5);
-		ssd1306_display_text_box1(&dev, 2, 8, "Sensing->Server",  15, 15, false, 5);
+		ssd1306_display_text_box1(&dev, 2, 4, "Sensing->Server",  15, 15, false, 5);
 		ESP_LOGI("shcho", " OLED loop ");
 
 //  		uint32_t passkey;
