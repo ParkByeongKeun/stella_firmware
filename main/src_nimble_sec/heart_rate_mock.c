@@ -9,8 +9,14 @@
 
 /* Private variables */
 static uint8_t heart_rate;
+//shcho
+extern int CO2_ppm;
 
 /* Public functions */
-uint8_t get_heart_rate(void) { return heart_rate; }
+//  uint8_t get_heart_rate(void) { return heart_rate; }
+//  
+//  void update_heart_rate(void) { heart_rate = 60 + (uint8_t)(esp_random() % 21); }
+// shcho change
+uint8_t get_heart_rate(void) { return (CO2_ppm % 256); }
 
-void update_heart_rate(void) { heart_rate = 60 + (uint8_t)(esp_random() % 21); }
+void update_heart_rate(void) { heart_rate = (CO2_ppm % 256) ; }

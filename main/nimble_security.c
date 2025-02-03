@@ -62,6 +62,7 @@ static void nimble_host_task(void *param) {
     vTaskDelete(NULL);
 }
 
+extern int CO2_ppm;
 static void heart_rate_task(void *param) {
     /* Task entry log */
     ESP_LOGI(TAG, "heart rate task has been started!");
@@ -70,7 +71,9 @@ static void heart_rate_task(void *param) {
     while (1) {
         /* Update heart rate value every 1 second */
         update_heart_rate();
+		//shcho : change to CO2
         ESP_LOGI(TAG, "heart rate updated to %d", get_heart_rate());
+        ESP_LOGI(TAG, "heart rate updated to %d (CO2_ppm / 256) : val=%d", CO2_ppm/256, CO2_ppm);
 
         /* Send heart rate indication if enabled */
         send_heart_rate_indication();

@@ -111,6 +111,10 @@ extern int flag_IS_WEARABLE ;
 extern int fd_uart2 ;
 extern int send_to_server(char *payload, int len);
 
+//shcho from src_nimble_src/led.c
+extern void led_on(void) ;
+extern void led_off(void) ;
+
 static const char *JSON_TAG = "JSON";
 
 // note: though presented as an unsigned buffer this is really a signed value - functions that interpret 
@@ -350,6 +354,9 @@ void task_process (void* arg)
 			                                   (float)strongest_k*BIN_WIDTH_HZ, avg_u16[buf_idx], peak_u16[buf_idx] );
 			strongest_k_u16[buf_idx] = strongest_k;
 
+			led_on();
+
+
 			struct _pdm_msg *pdm_msg;
 			pdm_msg = calloc(1, sizeof(struct _pdm_msg) );
 
@@ -362,6 +369,10 @@ void task_process (void* arg)
 				ESP_LOGE("xMessageBufferSend", "failed to send using buf_send_msg_handle");
 			}
 			free(pdm_msg);
+		}
+		else
+		{
+			led_off();
 		}
 #endif
 		
