@@ -739,6 +739,8 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
             ESP_LOGE("uart2", "Select failed: errno %d", errno);
             ESP_LOGE("uart2", "Select failed: errno %d", errno);
 //              ESP_LOGE("uart2", "Select failed: errno %d", errno);
+//
+			vTaskDelay(2000 / portTICK_PERIOD_MS); // 2025.03.17
             continue;
         } else if (s == 0) {
             ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
@@ -746,6 +748,7 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
 //              ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
 //              ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
 //              ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
+			vTaskDelay(1000 / portTICK_PERIOD_MS); // 2025.03.17
 			continue;
         } else {
             if (FD_ISSET(fd_uart2, &rfds)) 
@@ -771,6 +774,7 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
 //                  ESP_LOGE("uart2", "No FD has been set in select()");
 //                  ESP_LOGE("uart2", "No FD has been set in select()");
 //                  ESP_LOGE("uart2", "No FD has been set in select()");
+				vTaskDelay(2000 / portTICK_PERIOD_MS); // 2025.03.17
                 continue;
             }
         }

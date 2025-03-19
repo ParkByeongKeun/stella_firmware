@@ -219,11 +219,11 @@ esp_err_t spi_ads114s_init(const ads114s_config_t *cfg, ads114s_context_t** out_
 //          .input_delay_ns = ADS114S_INPUT_DELAY_NS,  //the ads114s output the data half a SPI clock behind.
     };
 
-	if ( flag_IS_WEARABLE == 0 ) 
-	{
-		gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
-		devcfg.spics_io_num = 5 ;  // 9(PIN_NUM_CS)->5
-	}
+//  	if ( flag_IS_WEARABLE == 0 ) 
+//  	{
+//  		gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
+//  		devcfg.spics_io_num = 5 ;  // 9(PIN_NUM_CS)->5
+//  	}
 
     //Attach the ads114s to the SPI bus
     err = spi_bus_add_device(ctx->cfg.host, &devcfg, &ctx->spi);
@@ -555,11 +555,11 @@ void spi2_adc_task(void *arg)
         .miso_io = PIN_NUM_MISO,
     };
 
-	if ( flag_IS_WEARABLE == 0 )  // Static : 시험용은 GPIO9가 고장나서
-	{
-		gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
-		ads114s_config.cs_io = 5 ;  // 9(PIN_NUM_CS)->5
-	}
+//  	if ( flag_IS_WEARABLE == 0 )  // Static : 시험용은 GPIO9가 고장나서
+//  	{
+//  		gpio9_set_to_input_from_spi_cs(); // GPIO_9 --> GPIO_5
+//  		ads114s_config.cs_io = 5 ;  // 9(PIN_NUM_CS)->5
+//  	}
 #ifdef CONFIG_EXAMPLE_INTR_USED
     ads114s_config.intr_used = true;
 //      gpio_install_isr_service(0);

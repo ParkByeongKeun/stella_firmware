@@ -170,6 +170,7 @@ static i2c_port_t i2c_port_i2c2 = I2C_NUM_1;
 #define ZMOD4450_I2C_DEV_ADDR	    0x32 // I2C2
 #define SHT40_SENSOR_I2C_DEV_ADDR	0x44 // I2C2
 #define SGP40_SENSOR_I2C_DEV_ADDR	0x59 // I2C2
+#define BQ40Z50_I2C_DEV_ADDR	0x0b // I2C2
 
 #define STR_MATCH	(0)
 
@@ -233,6 +234,11 @@ char my_mac_str[32];
 void app_main_stella_uart1(void);
 void app_main_stella_uart2(void);
 int send_CM1106_data( struct _CO2_ppm_packet *data );
+
+
+
+#define BQ40Z50_PEC_POLYNOMIAL	0x07	///< Polynomial for calculating PEC
+uint8_t BQ40Z50_get_pec(uint8_t *buff, const uint8_t len);
 
 
 
@@ -1302,6 +1308,118 @@ static int  register_fan_ctrl()
     return 0;
 }
 
+uint8_t BQ40Z50_get_pec(uint8_t *buff, const uint8_t len)
+{
+	// TODO: use "return crc8ccitt(buff, len);"
+
+	// Initialise CRC to zero.
+	uint8_t crc = 0;
+	uint8_t shift_register = 0;
+	bool invert_crc;
+
+	// Calculate crc for each byte in the stream.
+	for (uint8_t i = 0; i < len; i++) {
+		// Load next data byte into the shift register
+		shift_register = buff[i];
+
+		// Calculate crc for each bit in the current byte.
+		for (uint8_t j = 0; j < 8; j++) {
+			invert_crc = (crc ^ shift_register) & 0x80;
+			crc <<= 1;
+			shift_register <<= 1;
+
+			if (invert_crc) {
+				crc ^= BQ40Z50_PEC_POLYNOMIAL;
+			}
+		}
+	}
+
+	return crc;
+}
+
+static int do_bq40z50_FET_En(int argc, char **argv) 
+{
+	uint8_t buf_tx[5];
+    esp_err_t ret ;
+	// 0th : test
+//  	i2cset -c 0x0b -r 0x44 0x02 0x2B 0x00 0x55
+//  	buf_tx[0] = 0x44;
+//  	buf_tx[1] = 0x02;
+//  	buf_tx[2] = 0x2B;
+//  	buf_tx[3] = 0x00;
+//  	buf_tx[4] = BQ40Z50_get_pec(buf_tx,4);
+//  
+//  	ESP_LOGW("do_bq40z50_FET_En", "for test :LED_Toggle");
+//  	hexdump3("buf_tx", buf_tx, sizeof(buf_tx));
+	buf_tx[0] = (0x0b<<1) | 0x10;
+	buf_tx[1] = 0x00; // 0x00(backward compatibility : 0x44 0x02(len)
+	buf_tx[2] = 0x2B;
+	buf_tx[3] = 0x00;
+	buf_tx[4] = BQ40Z50_get_pec(buf_tx,4);
+
+	ESP_LOGW("do_bq40z50_FET_En", "for test :LED_Toggle");
+	hexdump3("buf_tx", &buf_tx[1], sizeof(buf_tx));
+
+	buf_tx[0] = (0x0b<<1) | 0x10;
+	buf_tx[1] = 0x44; // 0x00(backward compatibility : 0x44 0x02(len)
+	buf_tx[2] = 0x02; // 0x00(backward compatibility : 0x44 0x02(len)
+	buf_tx[3] = 0x2B;
+	buf_tx[4] = 0x00;
+	buf_tx[5] = BQ40Z50_get_pec(buf_tx,5);
+
+	ESP_LOGW("do_bq40z50_FET_En", "for test :LED_Toggle");
+	hexdump3("buf_tx", &buf_tx[1], sizeof(buf_tx));
+
+
+	// 1st : DeviceReset
+//  	i2cset -c 0x0b -r 0x44 0x02 0x22 0x00
+	buf_tx[0] = 0x44;
+	buf_tx[1] = 0x02;
+	buf_tx[2] = 0x41;
+	buf_tx[3] = 0x00;
+	buf_tx[4] = BQ40Z50_get_pec(buf_tx,4);
+
+	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+	ESP_LOGW("ddd", "-----------------------------");
+    ret = soft_i2c_master_write(bus_i2c2_gpio, BQ40Z50_I2C_DEV_ADDR, (uint8_t*)buf_tx, 5);
+	ESP_LOGW("ddd", "-----------------------------");
+	xSemaphoreGive(sema_i2c2);
+	
+
+	ESP_LOGW("do_bq40z50_FET_En", "Device Reset ret=%d", ret);
+	hexdump3("buf_tx", buf_tx, sizeof(buf_tx));
+	// 2nd : FET_En
+//  	i2cset -c 0x0b -r 0x44 0x02 0x22 0x00
+	buf_tx[0] = 0x44;
+	buf_tx[1] = 0x02;
+	buf_tx[2] = 0x22;
+	buf_tx[3] = 0x00;
+	buf_tx[4] = BQ40Z50_get_pec(buf_tx,4);
+
+	xSemaphoreTake(sema_i2c2, portMAX_DELAY);
+	ESP_LOGW("ddd", "-----------------------------");
+    ret = soft_i2c_master_write(bus_i2c2_gpio, BQ40Z50_I2C_DEV_ADDR, (uint8_t*)buf_tx, 5);
+	ESP_LOGW("ddd", "-----------------------------");
+	xSemaphoreGive(sema_i2c2);
+
+	ESP_LOGW("do_bq40z50_FET_En", "FET_En ret=%d", ret);
+	hexdump3("buf_tx", buf_tx, sizeof(buf_tx));
+
+	return 0;
+}
+
+static int  register_charge_en()
+{
+    const esp_console_cmd_t cmd = {
+        .command = "charge_en",
+        .help = "FET Enable(All) : Toggle",
+        .hint = NULL,
+        .func = do_bq40z50_FET_En,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+    return 0;
+}
+
 static int do_get_CO2(int argc, char **argv) 
 {
 	int ret = 0;
@@ -1839,7 +1957,7 @@ int get_SHT4x_cmd_resp(sht4x_t *dev, int cmd, sht4x_raw_data_t res, int len)
 //  		ESP_GOTO_ON_ERROR(ret, error, "get_SHT4x_cmd_resp", "Error reading from I2C device");
 	    if (ret == ESP_OK) 
 		{
-	        ESP_LOGI(TAG, "SHT4x I2C Fead OK : Get Serial Num(Receive)");
+	        ESP_LOGI(TAG, "SHT4x I2C Read OK : Get Serial Num(Receive)");
 			hexdump3("SHT4x cmd_resp Raw data", res , len);
 
 			ESP_LOGW("SHT4x_cmd_resp", "crc ( 0x%02x, 0x%02x )", crc8_sht4x(res,2), crc8_sht4x(res+3,2));
@@ -2342,9 +2460,12 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
 
 void i2c1_sensor_task(void *arg)
 {
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
+	                                   count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
+	                                   count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
+	                                   count_CO2_ppm_valid, flag_CO2_autozero_close_run );
 
 	if( flag_CO2_autozero_close_run != 0 ) 
 	{
@@ -2407,6 +2528,7 @@ void i2c1_sensor_task(void *arg)
 
 	
 #endif
+	// 
 
 	// 2. SHT4x
     memset(&dev_sht4x, 0, sizeof(dev_sht4x));
@@ -2624,6 +2746,7 @@ void i2c2_sensor_task(void *arg)
     ESP_LOGW("i2c2_sensor_task", "--------------------- Initialize and configure the software I2C bus -----------------------");
     /* Initialize and configure the software I2C bus */
     ESP_ERROR_CHECK(soft_i2c_master_new(&config, &bus_i2c2_gpio));
+		// 
 
 	
 #endif
@@ -2780,6 +2903,8 @@ void register_stella_cmd(void)
 	register_fan_ctrl();
 	register_CO2_cali();
 	register_CO2_autozero();
+
+	register_charge_en();
 
 }
 
