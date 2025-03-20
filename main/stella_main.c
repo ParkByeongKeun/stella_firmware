@@ -458,6 +458,7 @@ char calc_CO2_cks(uint8_t *data, int len)
 //  int get_CO2_ppm( int *ppm)
 int get_CO2_ppm( struct _CO2_ppm_packet *CO2_ppm_packet)
 {
+	int ret_val = 0 ;
 //  	static int Is_1st = 1 ; 
 //  	static i2c_master_dev_handle_t dev_handle_i2c1;
 	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
@@ -500,7 +501,9 @@ CO2_ppm_retry:
 			if( loop_count > 10 )
 			{
 				ESP_LOGW("shcho", "CM1106 retry timeout : return -1");
-				return -1;
+//  				return -1;
+				ret_val = -1;
+				goto error_get_CO2_ppm;
 			}
 
 			goto CO2_ppm_retry;
@@ -516,7 +519,9 @@ CO2_ppm_retry:
 			if( loop_count > 100  )
 			{
 				ESP_LOGE("shcho", "CM1106 :retry Time(All zero)");
-				return -10;
+//  				return -10;
+				ret_val = -10;
+				goto error_get_CO2_ppm;
 			}
 
 			loop_count++;
@@ -530,7 +535,9 @@ CO2_ppm_retry:
 			if( loop_count > 100  )
 			{
 				ESP_LOGE("shcho", "CM1106 :retry Time(Status is not Normal)");
-				return CO2_ppm_packet->status;
+//  				return CO2_ppm_packet->status;
+				ret_val = CO2_ppm_packet->status;
+				goto error_get_CO2_ppm;
 			}
 
 			loop_count++;
@@ -562,15 +569,20 @@ CO2_ppm_retry:
     } else {
         ESP_LOGW(TAG, "Read failed");
     }
+
+error_get_CO2_ppm:
 //      free(data);
     if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
-        return 1;
+		ret_val = 1 ;
+//          return 1;
     }
-    return 0;
+
+    return ret_val;
 }
 
 int get_CO2_SW_ver(char *sw_ver)
 {
+	int ret_val = 0 ;
 //  	static int Is_1st = 1 ; 
 //  	static i2c_master_dev_handle_t dev_handle_i2c1;
 	char tmp_str[100];
@@ -609,7 +621,9 @@ CO2_get_SW_ver_retry :
 			if( loop_count > 10 )
 			{
 				ESP_LOGW("shcho", "CM1106 retry timeout : return -1");
-				return -1;
+//  				return -1;
+				ret_val = -1;
+				goto error_get_CO2_SW_ver;
 			}
 
 			goto CO2_get_SW_ver_retry;
@@ -619,12 +633,16 @@ CO2_get_SW_ver_retry :
 		if( (char)cks != (char)tmp_str[len-1] )
 		{
 			ESP_LOGE("shcho", "get_CO2_ppm cks differ(0x%02x vs. 0x%02x)", (char)cks, tmp_str[len-1]);
-			return -20;
+//  			return -20;
+			ret_val = -20;
+			goto error_get_CO2_SW_ver;
 		}
 		else
 		{
 			memcpy(sw_ver, &tmp_str[1], len -2); // exclude cmd + cks
-			return 0;
+//  			return 0;
+			ret_val = 0;
+			goto error_get_CO2_SW_ver;
 		}
 
     } else if (ret == ESP_ERR_TIMEOUT) {
@@ -633,20 +651,24 @@ CO2_get_SW_ver_retry :
         ESP_LOGW(TAG, "Read failed");
     }
 //      free(data);
+//
+error_get_CO2_SW_ver:
     if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
-        return -20;
+//          return -20;
+			ret_val = -20;
     }
-	return 0;
+	return ret_val;
 }
 
 int do_CO2_autozero(int argc, char **argv)
 {
+	int ret_val = 0 ;
 	struct _CO2_autozero_resp CO2_autozero_resp;
 	int len = sizeof(CO2_autozero_resp) ;// 고정:12
 	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
 
 //  	req  : 0x03 [DF1] [DF0]
-//  	resp :0x03 [DF1] [DF0] [CS]
+//  	resp : 0x03 [DF1] [DF0] [CS]
 //
 	#define CO2_AUTOZERO_COMMAND	(0x10)
 	uint16_t tmp_u16 = 0;
@@ -677,7 +699,9 @@ int do_CO2_autozero(int argc, char **argv)
 	ESP_LOGW("do_CO2_autozero", "			wait for sema_i2c until taken");
 	ESP_LOGW("do_CO2_autozero", "			wait for sema_i2c until taken");
 	ESP_LOGW("do_CO2_autozero", "			wait for sema_i2c until taken");
-	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+
+//  xSemaphoreTake(sema_i2c1, portMAX_DELAY); -->삭제
+
 	ESP_LOGW("do_CO2_autozero", "take sema_i2c during CO2 autozero");
 	ESP_LOGW("do_CO2_autozero", "take sema_i2c during CO2 autozero");
 	ESP_LOGW("do_CO2_autozero", "take sema_i2c during CO2 autozero");
@@ -686,7 +710,7 @@ int do_CO2_autozero(int argc, char **argv)
     i2c_master_dev_handle_t dev_handle_i2c1;
     if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) 
 	{
-		xSemaphoreGive(sema_i2c1);
+//  		xSemaphoreGive(sema_i2c1); -->삭제
         return 1;
     }
 
@@ -707,8 +731,10 @@ CO2_autozero_retry :
 			if( loop_count > 20 )
 			{
 				ESP_LOGW("shcho", "CM1106 retry timeout : return -1");
-				xSemaphoreGive(sema_i2c1);
-				return -1;
+//  				xSemaphoreGive(sema_i2c1);
+//  				return -1;
+				ret_val = -1;
+				goto error_CO2_autozero;
 			}
 
         	vTaskDelay(2000 / portTICK_PERIOD_MS);
@@ -724,13 +750,15 @@ CO2_autozero_retry :
 		{
 			ESP_LOGW("CO2_autozero", "auto_autozero_success :%d : wait 5 secs", htons(CO2_autozero_resp.cali_ppm));
         	vTaskDelay(5000 / portTICK_PERIOD_MS);
-			xSemaphoreGive(sema_i2c1);
+//  			xSemaphoreGive(sema_i2c1); -->삭제
 			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run");
 			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run");
 			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run");
 			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run");
 			ESP_LOGW("CO2_autozero", "               other i2c1 task will be run\n\n\n");
-			return 0;
+//  			return 0;
+			ret_val = -1;
+			goto error_CO2_autozero;
 		}
 
     } else if (ret == ESP_ERR_TIMEOUT) {
@@ -739,10 +767,23 @@ CO2_autozero_retry :
         ESP_LOGW(TAG, "Read failed");
     }
 //      free(data);
+
+error_CO2_autozero:
     if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
-		xSemaphoreGive(sema_i2c1);
-        return -20;
+//  		xSemaphoreGive(sema_i2c1);
+//          return -20;
+		ret_val = -20;
+		goto error_CO2_autozero;
     }
+
+//  xSemaphoreGive(sema_i2c1); -->삭제
+	return ret_val;
+}
+
+int do_CO2_autozero_wrap(int argc, char **argv)
+{
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+	do_CO2_autozero(argc, argv);
 	xSemaphoreGive(sema_i2c1);
 	return 0;
 }
@@ -753,7 +794,7 @@ static int  register_CO2_autozero()
         .command = "co2-autozero",
         .help = "co2-autozero [open|close] [ 1 ~ 15 (days)] [400 ~ 1500(ppm)]",
         .hint = NULL,
-        .func = do_CO2_autozero,
+        .func = do_CO2_autozero_wrap,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
     return 0;
@@ -1419,7 +1460,6 @@ static int  register_charge_en()
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
     return 0;
 }
-
 static int do_get_CO2(int argc, char **argv) 
 {
 	int ret = 0;
@@ -1478,6 +1518,16 @@ static int do_get_CO2(int argc, char **argv)
     return 0;
 }
 
+static int do_get_CO2_wrap(int argc, char **argv) 
+{
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+	do_get_CO2(argc, argv);
+	xSemaphoreGive(sema_i2c1);
+
+	return 0;
+}
+
+
 
 static int  register_get_CO2()
 {
@@ -1485,7 +1535,7 @@ static int  register_get_CO2()
         .command = "get_CO2",
         .help = "get_CO2 sensor : val , sw_ver, sn",
         .hint = NULL,
-        .func = do_get_CO2,
+        .func = do_get_CO2_wrap,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
     return 0;
@@ -1900,6 +1950,7 @@ void CO2_autozero_to_close(void)
 {
 	int argc = 4;
 	char *argv[4] = { "imsi", "close", "15", "400"} ;
+
 	do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
 }
 
@@ -2458,39 +2509,38 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
 	return 0;
 }
 
-void i2c1_sensor_task(void *arg)
+void i2c1_i2c2_sensor_task(void *arg)
 {
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
+	ESP_LOGW("check", "1:1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
 	                                   count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
+	ESP_LOGW("check", "2:1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
 	                                   count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-	ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
+	ESP_LOGW("check", "3:1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
 	                                   count_CO2_ppm_valid, flag_CO2_autozero_close_run );
 
 	if( flag_CO2_autozero_close_run != 0 ) 
 	{
 		ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
-//  		내부에서 Take/Give한다.
-//  		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		CO2_autozero_to_close();
-//  		xSemaphoreGive(sema_i2c1);
+//  		내부에서 Take/Give한다. cli에서도 사용하기 때문에
+		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+			CO2_autozero_to_close();
+		xSemaphoreGive(sema_i2c1);
 	}
 
 
 	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 
-		set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);
-	    vTaskDelay(5000 / portTICK_PERIOD_MS);
-		set_PM2008_mode(PM2008_CMD_SETUP_CONTINUOUS, 0xffff);
-	    vTaskDelay(2000 / portTICK_PERIOD_MS);
+		set_PM2008_mode(PM2008_CMD_CLOSE, 0x00);              vTaskDelay(5000 / portTICK_PERIOD_MS);
+		set_PM2008_mode(PM2008_CMD_SETUP_CONTINUOUS, 0xffff); vTaskDelay(2000 / portTICK_PERIOD_MS);
 	//  	set_PM2008_mode(PM2008_CMD_SETUP_TIMING_MEASURE, 180);
 	//      vTaskDelay(2000 / portTICK_PERIOD_MS);
+	
 	xSemaphoreGive(sema_i2c1);
 
 
 	// ALS ( Ambient Light Sensor : Conf : integration 25msec )
 	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
-		als_conf_set(50); //이것을 무시하고 // SENS=1 DG=1 GAIN=1CO2_autozero_to_close it=100ms
+		als_conf_set(50); //이것을 무시하고 // SENS=1 DG=1 GAIN=1 it=100ms
 	xSemaphoreGive(sema_i2c1);
 
 
@@ -2708,9 +2758,11 @@ void i2c1_sensor_task(void *arg)
 //  //  			argv[2] = cali_day;
 //  //  			argv[3] = cali_ppm;
 //  
-//  			//내부에서 Sema Take하고 Release를 한다.
+//  			//내부에서 Sema Take하고 Release를 한다. --> 내부에서 삭제
 //  			do_CO2_autozero(argc, argv); //do_get_CO2에서 안에서 하면 Semaphore에서 DeadLock이 걸린다.
+			xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 			CO2_autozero_to_close();
+			xSemaphoreGive(sema_i2c1);
 		}
 
        	vTaskDelay(10000 / portTICK_PERIOD_MS);
@@ -2722,7 +2774,7 @@ void i2c1_sensor_task(void *arg)
 }
 
 
-void i2c2_sensor_task(void *arg)
+void i2c2_sensor_task(void *arg) // Not used : i2c2 sensor :get value @ i2c1_i2c2_sensor_task
 {
 	int flag_SHT4x_is_OK = 0 ;
 	int flag_SGP40_is_OK = 0 ;
@@ -3424,7 +3476,7 @@ void app_main(void)
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config_i2c1, &tool_bus_handle_i2c1));
 
 //      xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 4 * 1024, NULL, 8, NULL);
-    xTaskCreate(i2c1_sensor_task, "i2c1_sensor", 8 * 1024, NULL, 8, NULL);
+    xTaskCreate(i2c1_i2c2_sensor_task, "i2c1_sensor", 8 * 1024, NULL, 8, NULL);
 
 	#if I2C2__USING_GPIO
 	#else
