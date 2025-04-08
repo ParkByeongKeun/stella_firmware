@@ -25,6 +25,9 @@
 #include <cJSON.h>
 #include "stella_global.h"
 
+#include <time.h>
+#include <sys/time.h>
+
 static const char* TAG = "uart_select_example";
 extern SemaphoreHandle_t sema_uart1 ;
 extern SemaphoreHandle_t sema_uart2 ;
@@ -468,8 +471,22 @@ static void uart_select_task_uart1(void *arg)
 	char ZE08_set_to_Q_n_A_mode[9]  = { 0xff, 0x01, 0x78, 0x41, 0x00, 0x00, 0x00, 0x00, 0x46};
 	char ZE08_read_concentration[9] = { 0xff, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79};
 
-
     int fd_uart1;
+
+
+	ESP_LOGE(TAG, "before xSemaphoreTake(sema_uart1, portMAX_DELAY) : UART1 for open");
+
+	xSemaphoreTake(sema_uart1, portMAX_DELAY);
+	if ((fd_uart1 = open("/dev/uart/1", O_RDWR)) == -1) 
+	{
+		ESP_LOGE(TAG, "Cannot open UART1");
+		vTaskDelay(5000 / portTICK_PERIOD_MS);
+	}
+	xSemaphoreGive(sema_uart1);
+
+	// We have a driver now installed so set up the read/write functions to use driver also.
+	uart_vfs_dev_use_driver(1);
+
     while (1) 
 	{
 //  		ESP_LOGE("test", "- flasg_IS_WEARABLE=%d -- flag_USE_W5500_Ethernet=%d - order = %d --\n", 
@@ -483,14 +500,18 @@ static void uart_select_task_uart1(void *arg)
 
 	        ESP_LOGE(TAG, "before xSemaphoreTake(sema_uart1, portMAX_DELAY) : RS9A");
 			xSemaphoreTake(sema_uart1, portMAX_DELAY);
-	        if ((fd_uart1 = open("/dev/uart/1", O_RDWR)) == -1) {
-	            ESP_LOGE(TAG, "Cannot open UART1");
-	            vTaskDelay(5000 / portTICK_PERIOD_MS);
-	            continue;
-	        }
-	
-	        // We have a driver now installed so set up the read/write functions to use driver also.
-	        uart_vfs_dev_use_driver(1);
+//  			========================================================================================
+//  			//왜 여기서 계속 open했지?????? --> 한 번만 하고 계속 사용하자
+//  	        if ((fd_uart1 = open("/dev/uart/1", O_RDWR)) == -1) {
+//  	            ESP_LOGE(TAG, "Cannot open UART1");
+//  	            vTaskDelay(5000 / portTICK_PERIOD_MS);
+//  				xSemaphoreGive(sema_uart1);
+//  	            continue;
+//  	        }
+//  	
+//  	        // We have a driver now installed so set up the read/write functions to use driver also.
+//  	        uart_vfs_dev_use_driver(1);
+//  			========================================================================================
 	
 			loop_count_rs9a %= 3 ; 
 			ESP_LOGW("shcho_test", "\n>>>uart1 write: %s", Query_str_RS9A[loop_count_rs9a]);
@@ -577,7 +598,8 @@ static void uart_select_task_uart1(void *arg)
 	        }
 			loop_count_rs9a ++ ; 
 	
-			close(fd_uart1);
+//  			//왜 여기서 계속 open했지?????? --> 한 번만 하고 계속 사용하자
+//  			close(fd_uart1);
 	
 	        ESP_LOGE(TAG, "before xSemaphoreGive(sema_uart1) : RS9A");
 			xSemaphoreGive(sema_uart1);
@@ -598,15 +620,20 @@ static void uart_select_task_uart1(void *arg)
 	        ESP_LOGE("shcho_ZE08", "before xSemaphoreTake(sema_uart1, portMAX_DELAY) : ZE08");
 			xSemaphoreTake(sema_uart1, portMAX_DELAY);
 
-	        if ((fd_uart1 = open("/dev/uart/1", O_RDWR)) == -1) {
-	            ESP_LOGE(TAG, "Cannot open UART1");
-	            vTaskDelay(5000 / portTICK_PERIOD_MS);
-	            continue;
-	        }
+//  			========================================================================================
+//  			//왜 여기서 계속 open했지?????? --> 한 번만 하고 계속 사용하자
+//  	        if ((fd_uart1 = open("/dev/uart/1", O_RDWR)) == -1) {
+//  	            ESP_LOGE(TAG, "Cannot open UART1");
+//  	            vTaskDelay(5000 / portTICK_PERIOD_MS);
+//  				xSemaphoreGive(sema_uart1);
+//  	            continue;
+//  	        }
+//  	
+//  	        // We have a driver now installed so set up the read/write functions to use driver also.
+//  	        uart_vfs_dev_use_driver(1);
+//  			========================================================================================
 	
-	        // We have a driver now installed so set up the read/write functions to use driver also.
-	        uart_vfs_dev_use_driver(1);
-	
+
 //  			// only for RS9A : Text Based Data
 //  			W (17367) shcho: len_read=4 :  from ZE08
 //  			***** ZE08 reply 4 bytes *****
@@ -698,7 +725,8 @@ static void uart_select_task_uart1(void *arg)
 					}
 				}
 			}
-			close(fd_uart1);
+//  			//왜 여기서 계속 open했지?????? --> 한 번만 하고 계속 사용하자
+//  			close(fd_uart1);
 	
 	        ESP_LOGE(TAG, "before xSemaphoreGive(sema_uart1) : ZE08");
 			xSemaphoreGive(sema_uart1);
@@ -711,6 +739,7 @@ static void uart_select_task_uart1(void *arg)
 		// Static Main에서는 OK
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
+	close(fd_uart1);
 
     vTaskDelete(NULL);
 }
@@ -741,7 +770,7 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
 //              ESP_LOGE("uart2", "Select failed: errno %d", errno);
 //
 			vTaskDelay(2000 / portTICK_PERIOD_MS); // 2025.03.17
-            continue;
+//              continue; //comment at 2025.03.26
         } else if (s == 0) {
             ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
             ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
@@ -749,7 +778,7 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
 //              ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
 //              ESP_LOGW("uart2", "Timeout has been reached and nothing has been received(fd_uart2=%d)", fd_uart2);
 			vTaskDelay(1000 / portTICK_PERIOD_MS); // 2025.03.17
-			continue;
+//  			continue; //comment at 2025.03.26
         } else {
             if (FD_ISSET(fd_uart2, &rfds)) 
 			{
@@ -760,7 +789,33 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
                 if (len_read > 0)
 				{
                     ESP_LOGI("uart2", "Received: %s", buf_uart2);
-					hexdump3("RS9A reply", buf_uart2, len_read);	
+					hexdump3("CM4 reply", buf_uart2, len_read); // 2025.03.26: RS9A --> CM4
+
+					//----- date가 있으면 처리함
+					if( strncmp(buf_uart2,"date:", 5) == STR_MATCH )
+					{
+						char date_sec_str[50];
+						memset(date_sec_str, 0, sizeof(date_sec_str));
+						memcpy(date_sec_str, &buf_uart2[5], strlen(buf_uart2)-5);
+						int sec = atoi(date_sec_str);
+						ESP_LOGW("atoi", "CM4 : atoi result=%d", sec);
+
+						struct timeval now_cm4 ; 
+						now_cm4.tv_sec = sec;
+						settimeofday(&now_cm4,NULL);
+
+						// Set timezone to Seoul Standard Time
+						time_t now;
+						struct tm timeinfo;
+						char strftime_buf[64];
+						time(&now);
+					    setenv("TZ", "KST-9", 1);
+					    tzset();
+					    localtime_r(&now, &timeinfo);
+					    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+					    ESP_LOGI(TAG, "The current date/time in  Seoul   is: %s", strftime_buf);
+
+					}
                 } else {
                     ESP_LOGE("uart2", "UART2 read error");
                     continue;
@@ -779,6 +834,7 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
             }
         }
     }
+
     ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
     ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
 //      ESP_LOGE("uart2", "before vTaskDelete(NULL) : uart_select_task_uart2");
@@ -812,7 +868,9 @@ void app_main_stella_uart1(void)
 
     xTaskCreate(uart_select_task_uart1, "task_uart1", 4 * 1024, NULL, 8, NULL);
 }
+
 extern int gpio3_set_to_input_from_uart(void);
+
 void app_main_stella_uart2_GPS(void)
 {
 	ESP_LOGW("app_main_stella_uart2_GPS", "To do............................");
@@ -821,6 +879,7 @@ void app_main_stella_uart2_GPS(void)
 	ESP_LOGW("app_main_stella_uart2_GPS", "To do............................");
 	return;
 }
+
 void app_main_stella_uart2(void)
 {
 	xSemaphoreTake(sema_uart2, portMAX_DELAY);

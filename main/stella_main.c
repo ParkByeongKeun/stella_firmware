@@ -140,6 +140,7 @@ extern void spi2_adc_task(void *arg);
 extern void app_main_stella_uart2_GPS(void);
 
 static int do_esp32_fan_ctrl(int argc, char **argv) ;
+int send_date_json( void );
 
 //  //  static gpio_num_t i2c_gpio_sda = CONFIG_EXAMPLE_I2C_MASTER_SDA;
 //  //  static gpio_num_t i2c_gpio_scl = CONFIG_EXAMPLE_I2C_MASTER_SCL;
@@ -455,29 +456,32 @@ char calc_CO2_cks(uint8_t *data, int len)
 }
 
 
-//  int get_CO2_ppm( int *ppm)
-int get_CO2_ppm( struct _CO2_ppm_packet *CO2_ppm_packet)
+//  //  int get_CO2_ppm( int *ppm)
+//  int get_CO2_ppm( struct _CO2_ppm_packet *CO2_ppm_packet)
+int get_CO2_ppm( struct _CO2_ppm_packet *CO2_ppm_packet, i2c_master_dev_handle_t dev_handle_i2c1)
 {
 	int ret_val = 0 ;
 //  	static int Is_1st = 1 ; 
-//  	static i2c_master_dev_handle_t dev_handle_i2c1;
-	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
+
 	int len = sizeof(struct _CO2_ppm_packet);
 
 	int data_addr = 0x01; //cmd
 	int8_t cks = 0;
 
-    i2c_device_config_t i2c_dev_conf = {
-        .scl_speed_hz = i2c_frequency,
-        .device_address = chip_addr,
-    };
+//  	caller func에서 한 번만 한다.
+//  	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
+//      i2c_device_config_t i2c_dev_conf = {
+//          .scl_speed_hz = i2c_frequency,
+//          .device_address = chip_addr,
+//      };
+//  
+//      i2c_master_dev_handle_t dev_handle_i2c1;
+//      if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
+//          return 1;
+//      }
+//  
+//  //  	dev_handle_i2c1->device_address = CM1106_CO2_I2C_DEV_ADDR; // Error
 
-    i2c_master_dev_handle_t dev_handle_i2c1;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
-        return 1;
-    }
-
-//  	dev_handle_i2c1->device_address = CM1106_CO2_I2C_DEV_ADDR; // Error
 	int loop_count = 0;
 CO2_ppm_retry:
     esp_err_t ret = i2c_master_transmit_receive(dev_handle_i2c1, (uint8_t*)&data_addr, 1, 
@@ -572,35 +576,39 @@ CO2_ppm_retry:
 
 error_get_CO2_ppm:
 //      free(data);
-    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
-		ret_val = 1 ;
-//          return 1;
-    }
+
+//  //  	caller func에서 한 번만 한다.
+//      if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+//  		ret_val = 1 ;
+//  //          return 1;
+//      }
 
     return ret_val;
 }
 
-int get_CO2_SW_ver(char *sw_ver)
+//  int get_CO2_SW_ver(char *sw_ver)
+int get_CO2_SW_ver(char *sw_ver, i2c_master_dev_handle_t dev_handle_i2c1)
 {
 	int ret_val = 0 ;
 //  	static int Is_1st = 1 ; 
 //  	static i2c_master_dev_handle_t dev_handle_i2c1;
 	char tmp_str[100];
-	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
 	int len = 13 ;// 고정
 
 	int data_addr = 0x1E; //cmd
 	int8_t cks = 0;
 
-    i2c_device_config_t i2c_dev_conf = {
-        .scl_speed_hz = i2c_frequency,
-        .device_address = chip_addr,
-    };
-
-    i2c_master_dev_handle_t dev_handle_i2c1;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
-        return 1;
-    }
+//  	caller func에서 한 번만 한다.
+//  	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
+//      i2c_device_config_t i2c_dev_conf = {
+//          .scl_speed_hz = i2c_frequency,
+//          .device_address = chip_addr,
+//      };
+//  
+//      i2c_master_dev_handle_t dev_handle_i2c1;
+//      if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
+//          return 1;
+//      }
 
 	int loop_count = 0 ;
 CO2_get_SW_ver_retry :
@@ -616,11 +624,11 @@ CO2_get_SW_ver_retry :
 
 			ESP_LOGW("shcho", "CM1106 reply old cmd: retry again( sleep 2)  cmd 0x1E");
 			loop_count++;
-        	vTaskDelay(2000 / portTICK_PERIOD_MS);
+        	vTaskDelay(1000 / portTICK_PERIOD_MS); // shcho : 2025.03.26 : 2000->1000
 
 			if( loop_count > 10 )
 			{
-				ESP_LOGW("shcho", "CM1106 retry timeout : return -1");
+				ESP_LOGE("shcho", "CM1106 retry timeout : return -1");
 //  				return -1;
 				ret_val = -1;
 				goto error_get_CO2_SW_ver;
@@ -653,10 +661,12 @@ CO2_get_SW_ver_retry :
 //      free(data);
 //
 error_get_CO2_SW_ver:
-    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
-//          return -20;
-			ret_val = -20;
-    }
+
+//  	caller func에서 한 번만 한다.
+//      if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+//  //          return -20;
+//  			ret_val = -20;
+//      }
 	return ret_val;
 }
 
@@ -908,26 +918,27 @@ static int  register_CO2_cali()
 }
 
 
-int get_CO2_Serial_num(char *sn)
+int get_CO2_Serial_num(char *sn, i2c_master_dev_handle_t dev_handle_i2c1)
 {
 //  	static i2c_master_dev_handle_t dev_handle_i2c1;
 //  	char tmp_str[100];
 	struct _CO2_sn_packet CO2_sn_packet;
-	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
 	int len = sizeof(CO2_sn_packet) ;// 고정:12
 
 	int data_addr = 0x1F; //cmd
 	int8_t cks = 0;
 
-    i2c_device_config_t i2c_dev_conf = {
-        .scl_speed_hz = i2c_frequency,
-        .device_address = chip_addr,
-    };
-
-    i2c_master_dev_handle_t dev_handle_i2c1;
-    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
-        return 1;
-    }
+//  	caller func에서 한 번만 한다.
+//  	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
+//      i2c_device_config_t i2c_dev_conf = {
+//          .scl_speed_hz = i2c_frequency,
+//          .device_address = chip_addr,
+//      };
+//  
+//      i2c_master_dev_handle_t dev_handle_i2c1;
+//      if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
+//          return 1;
+//      }
 
 	int loop_count = 0 ;
 CO2_get_Serial_num_retry :
@@ -975,9 +986,13 @@ CO2_get_Serial_num_retry :
         ESP_LOGW(TAG, "Read failed");
     }
 //      free(data);
-    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
-        return -20;
-    }
+
+//
+//  	caller func에서 한 번만 한다.
+//      if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+//          return -20;
+//      }
+
 	return 0;
 }
 
@@ -1281,6 +1296,7 @@ static int set_fan_pwm(void)
 
 	return 0;
 }
+
 static int do_esp32_fan_ctrl(int argc, char **argv) 
 {
 	int chip_addr = FAN_CTRL_I2C_DEV_ADDR;
@@ -1291,6 +1307,7 @@ static int do_esp32_fan_ctrl(int argc, char **argv)
     };
 
     i2c_master_dev_handle_t dev_handle_i2c1;
+
     if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) 
 	{
         return 1;
@@ -1336,6 +1353,14 @@ static int do_esp32_fan_ctrl(int argc, char **argv)
     }
 	return 0;
 }
+static int do_esp32_fan_ctrl_wrap(int argc, char **argv) 
+{
+	
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
+	do_esp32_fan_ctrl(argc, argv); 
+	xSemaphoreGive(sema_i2c1);
+	return 0;
+}
 
 static int  register_fan_ctrl()
 {
@@ -1343,7 +1368,7 @@ static int  register_fan_ctrl()
         .command = "fan",
         .help = "fan control ( 0 ~ 100 %)",
         .hint = NULL,
-        .func = do_esp32_fan_ctrl,
+        .func = do_esp32_fan_ctrl_wrap,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
     return 0;
@@ -1460,14 +1485,36 @@ static int  register_charge_en()
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
     return 0;
 }
+
 static int do_get_CO2(int argc, char **argv) 
 {
 	int ret = 0;
+	int ret_val = 0 ;
+
+
+	send_date_json();
+
+
+/////// ---------------------------------------------------------------------------------------------
+	// 2025.03.26 : 각 함수에서 하던 것은 --> 여기서 한번만 add_device 하고 마지막에 rm_device
+	int chip_addr = CM1106_CO2_I2C_DEV_ADDR;
+//  	int data_addr = 0x1E; //cmd
+    i2c_device_config_t i2c_dev_conf = {
+        .scl_speed_hz = i2c_frequency,
+        .device_address = chip_addr,
+    };
+
+    static i2c_master_dev_handle_t dev_handle_i2c1;
+    if (i2c_master_bus_add_device(tool_bus_handle_i2c1, &i2c_dev_conf, &dev_handle_i2c1) != ESP_OK) {
+        return 1;
+    }
+/////// ---------------------------------------------------------------------------------------------
 
 	// 1. CO2_SW_ver ==========================================
 	ESP_LOGW("shcho", " get_CO2_SW_ver");
 	memset(CO2_SW_ver_str, 0, sizeof(CO2_SW_ver_str));
-	ret = get_CO2_SW_ver( CO2_SW_ver_str );
+//  	ret = get_CO2_SW_ver( CO2_SW_ver_str );
+	ret = get_CO2_SW_ver( CO2_SW_ver_str, dev_handle_i2c1 );
 	if( ret == 0 )  // OK
 	{
 		ESP_LOGI("shcho", "CO2 Sensor SW_Ver=%s", CO2_SW_ver_str);
@@ -1476,7 +1523,8 @@ static int do_get_CO2(int argc, char **argv)
 	// 2. CO2_Serial_num  ==========================================
 	ESP_LOGW("shcho", " get_CO2_Serial_num");
 	memset(CO2_Serial_num_str, 0, sizeof(CO2_Serial_num_str));
-	ret = get_CO2_Serial_num( CO2_Serial_num_str );
+//  	ret = get_CO2_Serial_num( CO2_Serial_num_str );
+	ret = get_CO2_Serial_num( CO2_Serial_num_str, dev_handle_i2c1 );
 	if( ret == 0 )  // OK
 	{
 		ESP_LOGI("shcho", "CO2 Serial_num=%s", CO2_Serial_num_str);
@@ -1488,11 +1536,9 @@ static int do_get_CO2(int argc, char **argv)
 //  	ret = get_CO2_ppm( &CO2_ppm );
 //
 	struct _CO2_ppm_packet CO2_ppm_packet;
-	ret = get_CO2_ppm( &CO2_ppm_packet ) ;
+//  	ret = get_CO2_ppm( &CO2_ppm_packet ) ;
+	ret = get_CO2_ppm( &CO2_ppm_packet, dev_handle_i2c1 ) ;
 	CO2_ppm = htons(CO2_ppm_packet.ppm);
-
-
-
 
 	//-------------------------------------------------------------------------
 	switch( ret  )
@@ -1515,7 +1561,13 @@ static int do_get_CO2(int argc, char **argv)
 	}
 	//-------------------------------------------------------------------------
 
+/////// ---------------------------------------------------------------------------------------------
+	// 2025.03.26 : 각 함수에서 하던 것은 --> 여기서 한번만 add_device 하고 마지막에 rm_device
+    if (i2c_master_bus_rm_device(dev_handle_i2c1) != ESP_OK) {
+			ret_val = -20;
+    }
     return 0;
+/////// ---------------------------------------------------------------------------------------------
 }
 
 static int do_get_CO2_wrap(int argc, char **argv) 
@@ -1589,6 +1641,55 @@ struct _PM2008_set_mode
 	char rsvd ; // 
 	char cks ;
 }__attribute__((packed));
+
+int send_date_json( void )
+{
+	// Set timezone to Seoul Standard Time
+	time_t now;
+	struct tm timeinfo;
+	char strftime_buf[64];
+
+	time(&now);
+	setenv("TZ", "KST-9", 1);
+	tzset();
+	localtime_r(&now, &timeinfo);
+	strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+
+	struct timeval mytime;
+	
+	// 현재 시간을 얻어온다.
+	gettimeofday(&mytime, NULL);
+
+
+	ESP_LOGI(TAG, "The current date/time in  Seoul   is: %s", strftime_buf);
+//  	if( data->status == 0 )
+	{
+	    ESP_LOGI(JSON_TAG, "Serialize.....Date");
+	    cJSON *root;
+    	root = cJSON_CreateObject();
+    	cJSON_AddStringToObject(root, "date(str)", strftime_buf);
+    	cJSON_AddNumberToObject(root, "date(sec)", mytime.tv_sec);
+
+	    char *my_json_string = cJSON_Print(root);
+
+    	ESP_LOGI("Date", "my_json_string\n%s",my_json_string);
+		if( flag_IS_WEARABLE == 0 ) //Static Main
+		{
+			xSemaphoreTake(sema_uart2, portMAX_DELAY);
+			write(fd_uart2, my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_uart2);
+		}
+		else // Wearable Main
+		{
+			xSemaphoreTake(sema_tcp, portMAX_DELAY);
+			send_to_server(my_json_string, strlen(my_json_string));
+			xSemaphoreGive(sema_tcp);
+		}
+    	cJSON_Delete(root);
+
+	}
+	return 1;
+}
 
 
 int send_CM1106_data( struct _CO2_ppm_packet *data )
@@ -2520,7 +2621,8 @@ void i2c1_i2c2_sensor_task(void *arg)
 
 	if( flag_CO2_autozero_close_run != 0 ) 
 	{
-		ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", count_CO2_ppm_valid, flag_CO2_autozero_close_run );
+		ESP_LOGW("check", "1st force set : count_CO2_ppm_valid=%d / flag_CO2_autozero_close_run=%d", 
+		                              count_CO2_ppm_valid, flag_CO2_autozero_close_run );
 //  		내부에서 Take/Give한다. cli에서도 사용하기 때문에
 		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 			CO2_autozero_to_close();
@@ -2559,7 +2661,8 @@ void i2c1_i2c2_sensor_task(void *arg)
 //  	ZMOD_Reset_GPIO(1);
 
 	
-#if I2C2__USING_GPIO
+//		=========================================================================
+#if I2C2__USING_GPIO // I2C2 : soft_i2c : setup
 //  	gpio15_16_set_to_input();
 //      esp_err_t ret = ESP_OK;
 // 	    soft_i2c_master_bus_t bus = NULL;
@@ -2575,11 +2678,11 @@ void i2c1_i2c2_sensor_task(void *arg)
     ESP_LOGW("i2c2_sensor_task", "--------------------- Initialize and configure the software I2C bus -----------------------");
     /* Initialize and configure the software I2C bus */
     ESP_ERROR_CHECK(soft_i2c_master_new(&config, &bus_i2c2_gpio));
-
 	
 #endif
-	// 
 
+//		=========================================================================
+	// 
 	// 2. SHT4x
     memset(&dev_sht4x, 0, sizeof(dev_sht4x));
     dev_sht4x.i2c_dev.addr = SHT4X_I2C_ADDRESS;
@@ -2723,6 +2826,7 @@ void i2c1_i2c2_sensor_task(void *arg)
 
 
 
+// I2C1  : Fan , CM1106(CO2), PM2008, ALS(조도센서)
 		xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 		set_fan_pwm();
 		xSemaphoreGive(sema_i2c1);
@@ -3545,7 +3649,9 @@ void app_main(void)
 //  	#endif
 	register_stella_cmd();
 
+	xSemaphoreTake(sema_i2c1, portMAX_DELAY);
 	set_fan_pwm(); //주기적으로 하자 ? 너무 빨리하면 Power On시에 FAN Controller가 나중에 Access되는 경우가 있다.
+	xSemaphoreGive(sema_i2c1);
 
 //  //  	#if ( USE_ESP_IDF_LIB_I2C == 1 ) 
 //      ESP_ERROR_CHECK(i2cdev_init_stella_i2c2_only()); // old driver  conflict
