@@ -18,7 +18,8 @@
 
 /* Public function declarations */
 void adv_init(void);
-bool is_connection_encrypted(uint16_t conn_handle);
+//  //shcho : for BLE Secirity 
+//  bool is_connection_encrypted(uint16_t conn_handle);
 int gap_init(void);
 
 #endif // GAP_SVC_H

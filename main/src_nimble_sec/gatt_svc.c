@@ -45,8 +45,9 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
              {/* Heart rate characteristic */
               .uuid = &heart_rate_chr_uuid.u,
               .access_cb = heart_rate_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE |
-                       BLE_GATT_CHR_F_READ_ENC,
+//                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE |
+//                         BLE_GATT_CHR_F_READ_ENC,
+              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE ,
               .val_handle = &heart_rate_chr_val_handle},
              {
                  0, /* No more characteristics in this service. */
@@ -61,7 +62,8 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                 /* LED characteristic */
                 {.uuid = &led_chr_uuid.u,
                  .access_cb = led_chr_access,
-                 .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC,
+//                   .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC,
+                 .flags = BLE_GATT_CHR_F_WRITE ,
                  .val_handle = &led_chr_val_handle},
                 {0}},
     },
@@ -168,19 +170,28 @@ error:
 }
 
 /* Public functions */
+// shcho : for BLE Non Security
 void send_heart_rate_indication(void) {
-    /* Check if connection handle is initialized */
-    if (!heart_rate_chr_conn_handle_inited) {
-        return;
-    }
-
-    /* Check indication and security status */
-    if (heart_rate_ind_status &&
-        is_connection_encrypted(heart_rate_chr_conn_handle)) {
+//      if (heart_rate_ind_status && heart_rate_chr_conn_handle_inited) {
         ble_gatts_indicate(heart_rate_chr_conn_handle,
                            heart_rate_chr_val_handle);
-    }
+        ESP_LOGI(TAG, "shcho :계속 보냄, heart rate indication sent!");
+//      }
 }
+//  //shcho  : for BLE Security
+//  void send_heart_rate_indication(void) {
+//      /* Check if connection handle is initialized */
+//      if (!heart_rate_chr_conn_handle_inited) {
+//          return;
+//      }
+//  
+//      /* Check indication and security status */
+//      if (heart_rate_ind_status &&
+//          is_connection_encrypted(heart_rate_chr_conn_handle)) {
+//          ble_gatts_indicate(heart_rate_chr_conn_handle,
+//                             heart_rate_chr_val_handle);
+//      }
+//  }
 
 /*
  *  Handle GATT attribute register events
@@ -230,23 +241,43 @@ void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg) {
  *      1. Update heart rate subscription status
  */
 
-int gatt_svr_subscribe_cb(struct ble_gap_event *event) {
+//  shcho: for BLE Non Security
+void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
+    /* Check connection handle */
+    if (event->subscribe.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        ESP_LOGI(TAG, "subscribe event; conn_handle=%d attr_handle=%d",
+                 event->subscribe.conn_handle, event->subscribe.attr_handle);
+    } else {
+        ESP_LOGI(TAG, "subscribe by nimble stack; attr_handle=%d",
+                 event->subscribe.attr_handle);
+    }
+
     /* Check attribute handle */
     if (event->subscribe.attr_handle == heart_rate_chr_val_handle) {
         /* Update heart rate subscription status */
         heart_rate_chr_conn_handle = event->subscribe.conn_handle;
         heart_rate_chr_conn_handle_inited = true;
         heart_rate_ind_status = event->subscribe.cur_indicate;
-
-        /* Check security status */
-        if (!is_connection_encrypted(event->subscribe.conn_handle)) {
-            ESP_LOGE(TAG, "failed to subscribe to heart rate measurement, "
-                          "connection not encrypted!");
-            return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
-        }
     }
-    return 0;
 }
+//  shcho: for BLE Security
+//  int gatt_svr_subscribe_cb(struct ble_gap_event *event) {
+//      /* Check attribute handle */
+//      if (event->subscribe.attr_handle == heart_rate_chr_val_handle) {
+//          /* Update heart rate subscription status */
+//          heart_rate_chr_conn_handle = event->subscribe.conn_handle;
+//          heart_rate_chr_conn_handle_inited = true;
+//          heart_rate_ind_status = event->subscribe.cur_indicate;
+//  
+//          /* Check security status */
+//          if (!is_connection_encrypted(event->subscribe.conn_handle)) {
+//              ESP_LOGE(TAG, "failed to subscribe to heart rate measurement, "
+//                            "connection not encrypted!");
+//              return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+//          }
+//      }
+//      return 0;
+//  }
 
 /*
  *  GATT server initialization

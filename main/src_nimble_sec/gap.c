@@ -256,11 +256,14 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                  event->subscribe.cur_indicate);
 
         /* GATT subscribe event callback */
-        rc = gatt_svr_subscribe_cb(event);
-        if (rc == BLE_ATT_ERR_INSUFFICIENT_AUTHEN) {
-            /* Request connection encryption */
-            return ble_gap_security_initiate(event->subscribe.conn_handle);
-        }
+			//shcho : for Non security
+        	gatt_svr_subscribe_cb(event);
+//          shcho : for BLE Security
+//          rc = gatt_svr_subscribe_cb(event);
+//          if (rc == BLE_ATT_ERR_INSUFFICIENT_AUTHEN) {
+//              /* Request connection encryption */
+//              return ble_gap_security_initiate(event->subscribe.conn_handle);
+//          }
         return rc;
 
     /* MTU update event */
@@ -342,8 +345,11 @@ void adv_init(void) {
     char addr_str[18] = {0};
 
     /* Make sure we have proper BT identity address set */
-    set_random_addr();
-    rc = ble_hs_util_ensure_addr(1);
+	//shcho : for BLE non Security
+    rc = ble_hs_util_ensure_addr(0);
+	//shcho : for BLE Security
+//      set_random_addr(); //shcho for BLE Security
+//      rc = ble_hs_util_ensure_addr(1);
     if (rc != 0) {
         ESP_LOGE(TAG, "device does not have any available bt address!");
         return;

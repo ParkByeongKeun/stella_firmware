@@ -33,6 +33,8 @@
 
 /* Defines */
 #define TAG "NimBLE_Security"
-#define DEVICE_NAME "NimBLE_SEC"
+//  //  #define DEVICE_NAME "NimBLE_SEC"
+//  #define DEVICE_NAME "WEARABLE 3W00009"
+#define DEVICE_NAME "Device 3W00009"
 
 #endif // COMMON_H
