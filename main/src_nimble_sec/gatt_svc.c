@@ -18,11 +18,11 @@ static int led_chr_access(uint16_t conn_handle, uint16_t attr_handle,
 
 /* Private variables */
 /* Heart rate service */
-static const ble_uuid16_t heart_rate_svc_uuid = BLE_UUID16_INIT(0x180D);
+//  static const ble_uuid16_t heart_rate_svc_uuid = BLE_UUID16_INIT(0x180D);
 
 static uint8_t heart_rate_chr_val[2] = {0};
 static uint16_t heart_rate_chr_val_handle;
-static const ble_uuid16_t heart_rate_chr_uuid = BLE_UUID16_INIT(0x2A37);
+//  static const ble_uuid16_t heart_rate_chr_uuid = BLE_UUID16_INIT(0x2A37);
 
 static uint16_t heart_rate_chr_conn_handle = 0;
 static bool heart_rate_chr_conn_handle_inited = false;
@@ -35,23 +35,47 @@ static const ble_uuid128_t led_chr_uuid =
     BLE_UUID128_INIT(0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef,
                      0x12, 0x12, 0x25, 0x15, 0x00, 0x00);
 
+
+static const ble_uuid16_t wearable_svc_uuid = BLE_UUID16_INIT(0x4001);
+static const ble_uuid128_t wearable_uuid =
+	BLE_UUID128_INIT(0x1d, 0x60, 0x48, 0xb2, 0xcc, 0xdf,  0x74, 0x9f,  0x28, 0x4a,  0xae, 0x54,  0x03, 0x40, 0x1e, 0xfb);
 /* GATT services table */
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
-    /* Heart rate service */
-    {.type = BLE_GATT_SVC_TYPE_PRIMARY,
-     .uuid = &heart_rate_svc_uuid.u,
-     .characteristics =
-         (struct ble_gatt_chr_def[]){
-             {/* Heart rate characteristic */
-              .uuid = &heart_rate_chr_uuid.u,
-              .access_cb = heart_rate_chr_access,
-//                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE |
-//                         BLE_GATT_CHR_F_READ_ENC,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE ,
-              .val_handle = &heart_rate_chr_val_handle},
-             {
-                 0, /* No more characteristics in this service. */
-             }}},
+//      /* Heart rate service */
+//      {.type = BLE_GATT_SVC_TYPE_PRIMARY,
+//       .uuid = &heart_rate_svc_uuid.u,
+//       .characteristics =
+//           (struct ble_gatt_chr_def[]){
+//               {/* Heart rate characteristic */
+//                .uuid = &heart_rate_chr_uuid.u,
+//                .access_cb = heart_rate_chr_access,
+//  //                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE |
+//  //                         BLE_GATT_CHR_F_READ_ENC,
+//                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE ,
+//                .val_handle = &heart_rate_chr_val_handle},
+//               {
+//                   0, /* No more characteristics in this service. */
+//               }}},
+
+
+    /* Automation IO service(shcho_test:noti) */
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+//          .uuid = &auto_io_svc_uuid_noti.u,
+        .uuid = &wearable_svc_uuid.u,
+        .characteristics =
+            (struct ble_gatt_chr_def[]){/* LED characteristic */
+//                                          {.uuid = &led_chr_uuid_noti.u,
+                                        {.uuid = &wearable_uuid.u,
+//                                           .access_cb = led_chr_access_noti,
+                                         .access_cb = heart_rate_chr_access,
+//                                           .flags = BLE_GATT_CHR_F_NOTIFY,
+                                         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_INDICATE,
+//                                           .val_handle = &led_chr_val_handle_noti},
+                                         .val_handle = &heart_rate_chr_val_handle},
+                                        {0}},
+    },
+
 
     /* Automation IO service */
     {
@@ -96,10 +120,18 @@ static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
 
         /* Verify attribute handle */
         if (attr_handle == heart_rate_chr_val_handle) {
-            /* Update access buffer value */
-            heart_rate_chr_val[1] = get_heart_rate();
-            rc = os_mbuf_append(ctxt->om, &heart_rate_chr_val,
-                                sizeof(heart_rate_chr_val));
+			//=====================================================
+//              /* Update access buffer value */
+//              heart_rate_chr_val[1] = get_heart_rate();
+//              rc = os_mbuf_append(ctxt->om, &heart_rate_chr_val,
+//                                  sizeof(heart_rate_chr_val));
+			//-----------------------------------------------------
+			char buffer[256] ;
+			memset( buffer, 0, sizeof(buffer));
+			sprintf(buffer, "CO2,%d", get_heart_rate());
+			//              sprintf(buffer, "S_0_4,%d", get_heart_rate());
+			rc = os_mbuf_append(ctxt->om, buffer, strlen(buffer)+1);
+			//=====================================================
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
         goto error;
