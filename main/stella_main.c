@@ -55,6 +55,7 @@ SemaphoreHandle_t sema_uart1 = NULL;
 SemaphoreHandle_t sema_uart2 = NULL;
 SemaphoreHandle_t sema_tcp = NULL;
 SemaphoreHandle_t sema_spi_ads114s = NULL;
+SemaphoreHandle_t sema_ble_send_noti = NULL;
 
 static const char *TAG = "i2c-tools";
 static uint32_t i2c_frequency = 100 * 1000;
@@ -141,6 +142,10 @@ extern void app_main_stella_uart2_GPS(void);
 
 static int do_esp32_fan_ctrl(int argc, char **argv) ;
 int send_date_json( void );
+extern int ble_send_noti_int(char *id, int value);
+extern int ble_send_noti_str(char *id, char* value);
+
+
 
 //  //  static gpio_num_t i2c_gpio_sda = CONFIG_EXAMPLE_I2C_MASTER_SDA;
 //  //  static gpio_num_t i2c_gpio_scl = CONFIG_EXAMPLE_I2C_MASTER_SCL;
@@ -1491,7 +1496,6 @@ static int do_get_CO2(int argc, char **argv)
 	int ret = 0;
 	int ret_val = 0 ;
 
-
 	send_date_json();
 
 
@@ -1724,6 +1728,9 @@ int send_CM1106_data( struct _CO2_ppm_packet *data )
 
 		ESP_LOGW("count_CO2_ppm_valid", "val=%d", count_CO2_ppm_valid );
 		count_CO2_ppm_valid ++;
+
+		ble_send_noti_int("CO2", (int)htons(data->ppm));
+		
 	}
 	else
 	{
@@ -2565,31 +2572,40 @@ int gpio15_16_set_to_input(void) // GPIO_3 --> GPIO_8
 int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
                   float temperature, float humidity, int voc_index )
 {
-	char  buffer[30];
+	char  buffer_sht40_temp[30];
+	char  buffer_sht40_humi[30];
+	char  buffer_sgp40[30];
     ESP_LOGI(JSON_TAG, "Serialize.....RHT_VOC");
     cJSON *root;
    	root = cJSON_CreateObject();
-   	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
-//     	cJSON_AddStringToObject(root, "SHT40_Serial_num",   mode);
-	memset(buffer, 0, sizeof(buffer));
-	sprintf(buffer, "%" PRIu32,dev_sht4x->serial);
-   	cJSON_AddStringToObject(root, "SHT40_Serial_num",  buffer);
-	sprintf(buffer, "%3.2f", temperature);
-   	cJSON_AddNumberToObject(root, "SHT40_T",  atof(buffer));
-	sprintf(buffer, "%3.2f", humidity);
-   	cJSON_AddNumberToObject(root, "SHT40_RH", atof(buffer));
 
-	memset(buffer, 0, sizeof(buffer));
-	sprintf(buffer, "%04X_%04X_%04X", dev_sgp40->serial[0],
+   	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+
+//     	cJSON_AddStringToObject(root, "SHT40_Serial_num",   mode);
+	memset(buffer_sht40_temp, 0, sizeof(buffer_sht40_temp));
+	memset(buffer_sht40_humi, 0, sizeof(buffer_sht40_humi));
+
+	sprintf(buffer_sht40_temp, "%" PRIu32,dev_sht4x->serial);
+   	cJSON_AddStringToObject(root, "SHT40_Serial_num",  buffer_sht40_temp);
+
+	sprintf(buffer_sht40_temp, "%3.2f", temperature);
+   	cJSON_AddNumberToObject(root, "SHT40_T",  atof(buffer_sht40_temp));
+
+	sprintf(buffer_sht40_humi, "%3.2f", humidity);
+   	cJSON_AddNumberToObject(root, "SHT40_RH", atof(buffer_sht40_humi));
+
+
+	memset(buffer_sgp40, 0, sizeof(buffer_sgp40));
+	sprintf(buffer_sgp40, "%04X_%04X_%04X", dev_sgp40->serial[0],
 	                                  dev_sgp40->serial[1], 
 									  dev_sgp40->serial[2]);
-   	cJSON_AddStringToObject(root, "SGP40_Serial_num",  buffer);
+   	cJSON_AddStringToObject(root, "SGP40_Serial_num",  buffer_sgp40);
    	cJSON_AddNumberToObject(root, "SGP40_Voc_index",    voc_index);
    	cJSON_AddStringToObject(root, "SGP40_Voc_index_name",  voc_index_name(voc_index));
-	sprintf(buffer, "%3.2f", temperature);
-   	cJSON_AddNumberToObject(root, "SGP40_T",  atof(buffer));
-	sprintf(buffer, "%3.2f", humidity);
-   	cJSON_AddNumberToObject(root, "SGP40_RH", atof(buffer));
+	sprintf(buffer_sgp40, "%3.2f", temperature);
+   	cJSON_AddNumberToObject(root, "SGP40_T",  atof(buffer_sgp40));
+	sprintf(buffer_sgp40, "%3.2f", humidity);
+   	cJSON_AddNumberToObject(root, "SGP40_RH", atof(buffer_sgp40));
 
     char *my_json_string = cJSON_Print(root);
 
@@ -2607,6 +2623,9 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
 		xSemaphoreGive(sema_tcp);
 	}
    	cJSON_Delete(root);
+
+	ble_send_noti_str("Temperature", buffer_sht40_temp);
+	ble_send_noti_str("Humidity", buffer_sht40_humi);
 	return 0;
 }
 
@@ -3391,6 +3410,7 @@ void app_main(void)
 	sema_uart2 = xSemaphoreCreateBinary();
 	sema_tcp = xSemaphoreCreateBinary();
 	sema_spi_ads114s = xSemaphoreCreateBinary();
+	sema_ble_send_noti = xSemaphoreCreateBinary();
 
 	xSemaphoreGive(sema_i2c1);
 //  	#if ( USE_ESP_IDF_LIB_I2C == 0 ) 
@@ -3400,6 +3420,7 @@ void app_main(void)
 	xSemaphoreGive(sema_uart2);
 	xSemaphoreGive(sema_tcp);
 	xSemaphoreGive(sema_spi_ads114s);
+	xSemaphoreGive(sema_ble_send_noti);
 
 //  	// 0. ---- LED ctrl
 //      xTaskCreate(app_main_led_strip_ctrl, "led_strip_ctrl", 4 * 1024, NULL, 5, NULL);

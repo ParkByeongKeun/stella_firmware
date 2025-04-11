@@ -14,7 +14,8 @@
 #define HEART_RATE_TASK_PERIOD (1000 / portTICK_PERIOD_MS)
 
 /* Public function declarations */
-uint8_t get_heart_rate(void);
+//  uint8_t get_heart_rate(void);
+int get_heart_rate(void);
 void update_heart_rate(void);
 
 #endif // HEART_RATE_H
