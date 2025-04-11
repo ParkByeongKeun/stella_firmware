@@ -1796,6 +1796,10 @@ int send_PM2008_data( struct _PM2008_data *data )
 			xSemaphoreGive(sema_tcp);
 		}
 
+		ble_send_noti_int("PM2.5", htons(data->pm2_5_grimm));
+		ble_send_noti_int("PM1.0", htons(data->pm1_0_grimm));
+		ble_send_noti_int("PM10", htons(data->pm10_0_grimm));
+
     	cJSON_Delete(root);
 
 	}
@@ -2582,15 +2586,16 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
 
 //     	cJSON_AddStringToObject(root, "SHT40_Serial_num",   mode);
-	memset(buffer_sht40_temp, 0, sizeof(buffer_sht40_temp));
-	memset(buffer_sht40_humi, 0, sizeof(buffer_sht40_humi));
 
+	memset(buffer_sht40_temp, 0, sizeof(buffer_sht40_temp));
 	sprintf(buffer_sht40_temp, "%" PRIu32,dev_sht4x->serial);
    	cJSON_AddStringToObject(root, "SHT40_Serial_num",  buffer_sht40_temp);
 
+	memset(buffer_sht40_temp, 0, sizeof(buffer_sht40_temp));
 	sprintf(buffer_sht40_temp, "%3.2f", temperature);
    	cJSON_AddNumberToObject(root, "SHT40_T",  atof(buffer_sht40_temp));
 
+	memset(buffer_sht40_humi, 0, sizeof(buffer_sht40_humi));
 	sprintf(buffer_sht40_humi, "%3.2f", humidity);
    	cJSON_AddNumberToObject(root, "SHT40_RH", atof(buffer_sht40_humi));
 
@@ -2600,7 +2605,7 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
 	                                  dev_sgp40->serial[1], 
 									  dev_sgp40->serial[2]);
    	cJSON_AddStringToObject(root, "SGP40_Serial_num",  buffer_sgp40);
-   	cJSON_AddNumberToObject(root, "SGP40_Voc_index",    voc_index);
+   	cJSON_AddNumberToObject(root, "SGP40_Voc_index",       voc_index);
    	cJSON_AddStringToObject(root, "SGP40_Voc_index_name",  voc_index_name(voc_index));
 	sprintf(buffer_sgp40, "%3.2f", temperature);
    	cJSON_AddNumberToObject(root, "SGP40_T",  atof(buffer_sgp40));
@@ -2625,7 +2630,8 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
    	cJSON_Delete(root);
 
 	ble_send_noti_str("Temperature", buffer_sht40_temp);
-	ble_send_noti_str("Humidity", buffer_sht40_humi);
+	ble_send_noti_str("Humidity",    buffer_sht40_humi);
+	ble_send_noti_int("TVOC",        voc_index);
 	return 0;
 }
 

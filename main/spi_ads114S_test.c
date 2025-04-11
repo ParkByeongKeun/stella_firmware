@@ -113,6 +113,9 @@ static const char TAG[] = "ADS114S";
 extern void hexdump3(char *title, void *pack, size_t size) ;
 int gpio9_set_to_input_from_spi_cs(void);// 기존 GPIO9(SPI_CS)가 고장이라서 Port를 변경함
 
+extern int ble_send_noti_int(char *id, int value);
+extern int ble_send_noti_str(char *id, char* value);
+
 
 static esp_err_t ads114s_wait_done_by_intr(ads114s_context_t* ctx)
 {
@@ -696,6 +699,10 @@ void spi2_adc_task(void *arg)
 				send_to_server(my_json_string, strlen(my_json_string));
 				xSemaphoreGive(sema_tcp);
 			}
+
+			ble_send_noti_int("CO", adc_val[2]);
+			ble_send_noti_int("O3", adc_val[1]);
+			ble_send_noti_int("NO2",adc_val[3]);
 		   	cJSON_Delete(root);
 		}
 //  	    while (1) {

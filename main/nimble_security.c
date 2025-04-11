@@ -18,7 +18,8 @@ static void nimble_host_config_init(void);
 static void nimble_host_task(void *param);
 
 TaskHandle_t xHandle = NULL;
-extern void vTasksendNotification(); //! For sending notifications periodically as freetos task(after setting value of variable"notification")
+//  extern void vTasksendNotification(); //! For sending notifications periodically as freetos task(after setting value of variable"notification")
+extern void vTasksendNotification_for_keepalive(); //! For sending notifications periodically as freetos task(after setting value of variable"notification")
 
 /* Private functions */
 /*
@@ -148,6 +149,6 @@ void app_main_nimble_sec(void)
     /* Start NimBLE host task thread and return */
     xTaskCreate(nimble_host_task, "NimBLE Host", 4*1024, NULL, 5, NULL);
 //      xTaskCreate(heart_rate_task, "Heart Rate", 4*1024, NULL, 5, NULL);
-//  	xTaskCreate(vTasksendNotification, "vTasksendNotification", 4096, NULL, 1, &xHandle);
+	xTaskCreate(vTasksendNotification_for_keepalive, "vTasksendNotification", 4096, NULL, 1, &xHandle);
     return;
 }

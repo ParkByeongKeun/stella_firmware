@@ -16,8 +16,15 @@ static int heart_rate_chr_access(uint16_t conn_handle, uint16_t attr_handle,
 static int led_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                           struct ble_gatt_access_ctxt *ctxt, void *arg);
 /* Private variables */
+
+//  //    6 #define SERVICE_UUID              "fb1e4001-54ae-4a28-9f74-dfccb248601d"
+//  //    7 #define CHARACTERISTIC_UUID_RX    "fb1e4002-54ae-4a28-9f74-dfccb248601d"
+//  //    8 #define CHARACTERISTIC_UUID_TX    "fb1e4003-54ae-4a28-9f74-dfccb248601d"
+
 /* Heart rate service */
 static const ble_uuid16_t heart_rate_svc_uuid = BLE_UUID16_INIT(0x4001);
+//  static const ble_uuid128_t heart_rate_svc_uuid = //BLE_UUID16_INIT(0x4001);
+//  			 BLE_UUID128_INIT(0x1d, 0x60, 0x48, 0xb2, 0xcc, 0xdf,  0x74, 0x9f,  0x28, 0x4a,  0xae, 0x54,  0x01, 0x40, 0x1e, 0xfb);
 
 static uint8_t heart_rate_chr_val[2] = {0};
 
@@ -25,6 +32,8 @@ static uint8_t heart_rate_chr_val[2] = {0};
 uint16_t heart_rate_chr_val_handle;
 
 static const ble_uuid16_t heart_rate_chr_uuid = BLE_UUID16_INIT(0x4002);
+//  static const ble_uuid128_t heart_rate_chr_uuid = // BLE_UUID16_INIT(0x4002);
+//  			 BLE_UUID128_INIT(0x1d, 0x60, 0x48, 0xb2, 0xcc, 0xdf,  0x74, 0x9f,  0x28, 0x4a,  0xae, 0x54,  0x03, 0x40, 0x1e, 0xfb);
 
 uint16_t heart_rate_chr_conn_handle = 0;
 static bool heart_rate_chr_conn_handle_inited = false;
@@ -65,7 +74,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     },
 };
 
-void vTasksendNotification() //! For sending notifications periodically as freetos task(after setting value of variable"notification")
+void vTasksendNotification_for_keepalive() //! For sending notifications periodically as freetos task(after setting value of variable"notification")
 {
   int rc;
   struct os_mbuf *om;
@@ -74,9 +83,9 @@ void vTasksendNotification() //! For sending notifications periodically as freet
   {
     if (notify_state) //!! This value is checked so that we don't send notifications if no one has subscribed to our notification handle.
     {
-//        om = ble_hs_mbuf_from_flat(notification, sizeof(notification));
 
-      sprintf(notification, "CO2,%d", 111+(val_increase++));
+	  xSemaphoreTake(sema_ble_send_noti, portMAX_DELAY);
+      sprintf(notification, "KEEP_ALIVE,1");
       om = ble_hs_mbuf_from_flat(notification, strlen(notification));
       ESP_LOGW("shcho", "notification(1)=%s", notification);
 
@@ -88,28 +97,46 @@ void vTasksendNotification() //! For sending notifications periodically as freet
       {
         printf("\n error notifying; rc\n");
       }
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+	  xSemaphoreGive(sema_ble_send_noti);
 
-//        vTaskDelay(200 / portTICK_PERIOD_MS);
-      sprintf(notification, "Temperature,%.1f", 11.1+(float)(val_increase++));
-      om = ble_hs_mbuf_from_flat(notification, strlen(notification));
-      ESP_LOGW("shcho", "notification(2)=%s", notification);
 
-//        rc = ble_gattc_notify_custom(conn_handle, notification_handle, om);
-      rc = ble_gattc_notify_custom(conn_handle, heart_rate_chr_val_handle, om);
-      printf("\n rc=%d\n", rc);
-
-      if (rc != 0)
-      {
-        printf("\n error notifying; rc\n");
-      }
+//  //        om = ble_hs_mbuf_from_flat(notification, sizeof(notification));
+//  
+//        sprintf(notification, "CO2,%d", 111+(val_increase++));
+//        om = ble_hs_mbuf_from_flat(notification, strlen(notification));
+//        ESP_LOGW("shcho", "notification(1)=%s", notification);
+//  
+//  //        rc = ble_gattc_notify_custom(conn_handle, notification_handle, om);
+//        rc = ble_gattc_notify_custom(conn_handle, heart_rate_chr_val_handle, om);
+//        printf("\n rc=%d\n", rc);
+//  
+//        if (rc != 0)
+//        {
+//          printf("\n error notifying; rc\n");
+//        }
+//  
+//  //        vTaskDelay(200 / portTICK_PERIOD_MS);
+//        sprintf(notification, "Temperature,%.1f", 11.1+(float)(val_increase++));
+//        om = ble_hs_mbuf_from_flat(notification, strlen(notification));
+//        ESP_LOGW("shcho", "notification(2)=%s", notification);
+//  
+//  //        rc = ble_gattc_notify_custom(conn_handle, notification_handle, om);
+//        rc = ble_gattc_notify_custom(conn_handle, heart_rate_chr_val_handle, om);
+//        printf("\n rc=%d\n", rc);
+//  
+//        if (rc != 0)
+//        {
+//          printf("\n error notifying; rc\n");
+//        }
     }
     else
     {
       printf("No one subscribed to notifications\n");
-      vTaskDelay(1800 / portTICK_PERIOD_MS);
+//        vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
-//      vTaskDelay(2000 / portTICK_PERIOD_MS);
-    vTaskDelay(200 / portTICK_PERIOD_MS);
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+//      vTaskDelay(500 / portTICK_PERIOD_MS);
   }
   vTaskDelete(NULL);
 }
@@ -138,6 +165,8 @@ int ble_send_noti_int(char *id, int value)
 		{
 			printf("\n error notifying; rc(%s)\n", id);
 		}
+
+      	vTaskDelay(100 / portTICK_PERIOD_MS);
 		xSemaphoreGive(sema_ble_send_noti);
 	}
 	return rc;
