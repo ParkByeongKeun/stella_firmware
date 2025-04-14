@@ -37,18 +37,22 @@ extern int send_to_server(char *payload, int len);
 
 static const char *JSON_TAG = "JSON";
 
-double Sensitivity_O3 =  60.66;
-double Sensitivity_CO =   4.42;
-double Sensitivity_NO2 = 22.48;
+double Sensitivity_H2S = 214.13;
+double Sensitivity_O3 =   60.66;
+double Sensitivity_CO =    4.42;
+double Sensitivity_NO2 =  22.48;
+double TIA_Gain_H2S =  49.9;
 double TIA_Gain_O3 =  499;
 double TIA_Gain_CO =  100; 
 double TIA_Gain_NO2 = 499;
+double M_H2S = 0.0;
 double M_O3  = 0.0;
 double M_CO  = 0.0;
-double M_NO2  = 0.0;
-double Vgas0_O3  = 0.83;
-double Vgas0_CO  = 0.829;
-double Vgas0_NO2  = 0.887;
+double M_NO2 = 0.0;
+double Vgas0_H2S = 0.83084;
+double Vgas0_O3  = 0.83477;
+double Vgas0_CO  = 0.82867;
+double Vgas0_NO2 = 0.88737;
 
 /*
 //   This code demonstrates how to use the SPI master half duplex mode to read/write a AT932C46D EEPROM (8-bit mode).
@@ -689,36 +693,35 @@ void spi2_adc_task(void *arg)
 		xSemaphoreGive(sema_spi_ads114s);
 
 		{
-		    ESP_LOGI(JSON_TAG, "Serialize.....ADC_Result");
-		    cJSON *root;
-		   	root = cJSON_CreateObject();
-	    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
-		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_H2S_val",      adc_val[0]);
-		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_O3_val",       adc_val[1]);
-		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_CO_val",       adc_val[2]);
-		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_NO2_val",      adc_val[3]);
-		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_NH3_val",      adc_val[4]);
-		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_3.3V_div2_val",adc_val[5]);
-	
-		    char *my_json_string = cJSON_Print(root);
-	
-		   	ESP_LOGI("FAN", "my_json_string\n%s",my_json_string);
-			if( flag_IS_WEARABLE == 0 ) //Static Main
-			{
-				xSemaphoreTake(sema_uart2, portMAX_DELAY);
-				write(fd_uart2, my_json_string, strlen(my_json_string));
-				xSemaphoreGive(sema_uart2);
-			}
-			else // Wearable Main
-			{
-				xSemaphoreTake(sema_tcp, portMAX_DELAY);
-				send_to_server(my_json_string, strlen(my_json_string));
-				xSemaphoreGive(sema_tcp);
-			}
-//  			ble_send_noti_int("CO", adc_val[2]);
-//  			ble_send_noti_int("O3", adc_val[1]);
-//  			ble_send_noti_int("NO2",adc_val[3]);
+//  		    ESP_LOGI(JSON_TAG, "Serialize.....ADC_Result");
+//  		    cJSON *root;
+//  		   	root = cJSON_CreateObject();
+//  	    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+//  		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_H2S_val",      adc_val[0]);
+//  		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_O3_val",       adc_val[1]);
+//  		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_CO_val",       adc_val[2]);
+//  		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_NO2_val",      adc_val[3]);
+//  		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_NH3_val",      adc_val[4]);
+//  		   	cJSON_AddNumberToObject(root, "ADC_HW_v1(2.5V_ref)_3.3V_div2_val",adc_val[5]);
+//  	
+//  		    char *my_json_string = cJSON_Print(root);
+//  	
+//  		   	ESP_LOGI("FAN", "my_json_string\n%s",my_json_string);
+//  			if( flag_IS_WEARABLE == 0 ) //Static Main
+//  			{
+//  				xSemaphoreTake(sema_uart2, portMAX_DELAY);
+//  				write(fd_uart2, my_json_string, strlen(my_json_string));
+//  				xSemaphoreGive(sema_uart2);
+//  			}
+//  			else // Wearable Main
+//  			{
+//  				xSemaphoreTake(sema_tcp, portMAX_DELAY);
+//  				send_to_server(my_json_string, strlen(my_json_string));
+//  				xSemaphoreGive(sema_tcp);
+//  			}
+//  		   	cJSON_Delete(root);
 
+			double H2S_cali_volt = 0 ;
 			double  CO_cali_volt = 0 ;
 			double  O3_cali_volt = 0 ;
 			double NO2_cali_volt = 0 ;
@@ -733,6 +736,7 @@ void spi2_adc_task(void *arg)
 			double NH3_log = 0;
 			double NH3_cali_ppm = 0;
 
+			double H2S_cali_ppm = 0 ;
 			double  CO_cali_ppm = 0 ;
 			double  O3_cali_ppm = 0 ;
 			double NO2_cali_ppm = 0 ;
@@ -740,18 +744,21 @@ void spi2_adc_task(void *arg)
 //  			M_O3  = (Sensitivity_O3  * TIA_Gain_O3  * (10^-9) * (1e3));
 //  			M_CO  = (Sensitivity_CO  * TIA_Gain_CO  * (10^-9) * (1e3));
 //  			M_NO2 = (Sensitivity_NO2 * TIA_Gain_NO2 * (10^-9) * (1e3));
-			M_O3  = (Sensitivity_O3  * TIA_Gain_O3)/(1000000);  //* (10^-9) * (1e3));
-			M_CO  = (Sensitivity_CO  * TIA_Gain_CO)/(1000000);  //* (10^-9) * (1e3));
+			M_H2S = (Sensitivity_H2S * TIA_Gain_H2S)/(1000000);  //* (10^-9) * (1e3));
+			M_O3  = (Sensitivity_O3  * TIA_Gain_O3 )/(1000000);  //* (10^-9) * (1e3));
+			M_CO  = (Sensitivity_CO  * TIA_Gain_CO )/(1000000);  //* (10^-9) * (1e3));
 			M_NO2 = (Sensitivity_NO2 * TIA_Gain_NO2)/(1000000); //* (10^-9) * (1e3));
 
 			ESP_LOGW("sss", "----------------------------------------");
-			ESP_LOGW("sss", "M_O3=%f", M_O3);
-			ESP_LOGW("sss", "M_CO=%f", M_CO);
+			ESP_LOGW("sss", "M_H2S=%f", M_H2S);
+			ESP_LOGW("sss", " M_O3=%f",  M_O3);
+			ESP_LOGW("sss", " M_CO=%f",  M_CO);
 			ESP_LOGW("sss", "M_NO2=%f", M_NO2);
 
 
 
 
+		    H2S_cali_volt = 3.3*(adc_val[0]*(2.5/3.3))/(1<<16);
 			 O3_cali_volt = 3.3*(adc_val[1]*(2.5/3.3))/(1<<16);
 			 CO_cali_volt = 3.3*(adc_val[2]*(2.5/3.3))/(1<<16);
 			NO2_cali_volt = 3.3*(adc_val[3]*(2.5/3.3))/(1<<16);
@@ -771,35 +778,80 @@ void spi2_adc_task(void *arg)
 			ESP_LOGW("sss", "NH3_cali_ppm=%f",NH3_cali_ppm);
 			ESP_LOGW("sss", "----------------------------------------");
 
-			ESP_LOGW("sss", "O3_cali_volt=%f", O3_cali_volt);
-			ESP_LOGW("sss", "CO_cali_volt=%f", CO_cali_volt);
-			ESP_LOGW("sss", "NO2_cali_volt=%f",NO2_cali_volt);
+			ESP_LOGW("sss", "H2S_cali_volt=%f", H2S_cali_volt);
+			ESP_LOGW("sss", " O3_cali_volt=%f",  O3_cali_volt);
+			ESP_LOGW("sss", " CO_cali_volt=%f",  CO_cali_volt);
+			ESP_LOGW("sss", "NO2_cali_volt=%f", NO2_cali_volt);
 
 
 //  			 O3_cali_ppm = (1/M_O3)*(O3_cali_volt-Vgas0_O3);
 //  			 CO_cali_ppm = (1/M_CO)*(CO_cali_volt-Vgas0_CO);
 //  			NO2_cali_ppm = (1/M_NO2)*(NO2_cali_volt-Vgas0_NO2);
-			 O3_cali_ppm = (O3_cali_volt-Vgas0_O3)/M_O3;
-			 CO_cali_ppm = (CO_cali_volt-Vgas0_CO)/M_CO;
+			H2S_cali_ppm = (H2S_cali_volt-Vgas0_H2S)/M_H2S;
+			 O3_cali_ppm = ( O3_cali_volt-Vgas0_O3 )/M_O3;
+			 CO_cali_ppm = ( CO_cali_volt-Vgas0_CO )/M_CO;
 			NO2_cali_ppm = (NO2_cali_volt-Vgas0_NO2)/M_NO2;
 
 			ESP_LOGW("sss", "----------------------------------------");
-			ESP_LOGW("sss", "O3_cali_ppm=%.1f", O3_cali_ppm);
-			ESP_LOGW("sss", "CO_cali_ppm=%.1f", CO_cali_ppm);
+			ESP_LOGW("sss", "H2S_cali_ppm=%.1f",H2S_cali_ppm);
+			ESP_LOGW("sss", " O3_cali_ppm=%.1f", O3_cali_ppm);
+			ESP_LOGW("sss", " CO_cali_ppm=%.1f", CO_cali_ppm);
 			ESP_LOGW("sss", "NO2_cali_ppm=%.1f",NO2_cali_ppm);
 
-			O3_cali_ppm = MAX(0.1, O3_cali_ppm);
-			CO_cali_ppm = MAX(0.1, CO_cali_ppm);
-			NO2_cali_ppm = MAX(0.1, NO2_cali_ppm);
+			H2S_cali_ppm = MAX(0.1,  H2S_cali_ppm);
+			 O3_cali_ppm = MAX(0.1,   O3_cali_ppm);
+			 CO_cali_ppm = MAX(0.1,   CO_cali_ppm);
+			NO2_cali_ppm = MAX(0.1,  NO2_cali_ppm);
 			NH3_cali_ppm = MAX(0.1, NH3_cali_ppm);
 
 
 
-			ble_send_noti_float("O3", O3_cali_ppm);
-			ble_send_noti_float("CO", CO_cali_ppm);
+			ble_send_noti_float("H2S", H2S_cali_ppm);
+			ble_send_noti_float("O3",   O3_cali_ppm);
+			ble_send_noti_float("CO",   CO_cali_ppm);
 			ble_send_noti_float("NO2",NO2_cali_ppm);
 			ble_send_noti_float("NH3",NH3_cali_ppm);
+
+		    ESP_LOGI(JSON_TAG, "Serialize.....ADC_Result");
+		    cJSON *root;
+			char temp[128];
+		   	root = cJSON_CreateObject();
+	    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", H2S_cali_ppm);
+		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_H2S_val",   temp   );
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", O3_cali_ppm);
+		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_O3_val",   temp   );
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", CO_cali_ppm);
+		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_CO_val",   temp   );
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", NO2_cali_ppm);
+		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NO2_val",   temp   );
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", NH3_cali_ppm);
+		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NH3_val",   temp   );
+
+		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_H2S_val",      adc_val[0]);
+		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_O3_val",       adc_val[1]);
+		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_CO_val",       adc_val[2]);
+		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_NO2_val",      adc_val[3]);
+		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_NH3_val",      adc_val[4]);
+		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_3.3V_div2_val",adc_val[5]);
+	
+		    char *my_json_string = cJSON_Print(root);
+	
+		   	ESP_LOGI("FAN", "my_json_string\n%s",my_json_string);
+			if( flag_IS_WEARABLE == 0 ) //Static Main
+			{
+				xSemaphoreTake(sema_uart2, portMAX_DELAY);
+				write(fd_uart2, my_json_string, strlen(my_json_string));
+				xSemaphoreGive(sema_uart2);
+			}
+			else // Wearable Main
+			{
+				xSemaphoreTake(sema_tcp, portMAX_DELAY);
+				send_to_server(my_json_string, strlen(my_json_string));
+				xSemaphoreGive(sema_tcp);
+			}
 		   	cJSON_Delete(root);
+
 		}
 //  	    while (1) {
 //  	        // Add your main loop handling code here.

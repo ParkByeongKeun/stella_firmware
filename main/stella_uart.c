@@ -64,6 +64,10 @@ extern int send_to_server(char *payload, int len);
 int fd_uart2 = -1 ;
 char buf_uart2[1024];
 
+extern int ble_send_noti_int(char *id, int value);
+extern int ble_send_noti_str(char *id, char* value);
+extern int ble_send_noti_float(char *id, float value);
+
 struct _ZE08_CH2O_data
 {
 	char start;
@@ -427,6 +431,8 @@ int send_ZE08_data( struct _ZE08_CH2O_data *data )
 			#endif
 			xSemaphoreGive(sema_tcp);
 		}
+
+		ble_send_noti_int("CH2O", (int)htons(data->ppb));
 
     	cJSON_Delete(root);
 
