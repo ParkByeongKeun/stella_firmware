@@ -804,6 +804,11 @@ void spi2_adc_task(void *arg)
 			NO2_cali_ppm = MAX(0.1,  NO2_cali_ppm);
 			NH3_cali_ppm = MAX(0.1, NH3_cali_ppm);
 
+			ESP_LOGW("sss", "--------some Changed--------------------");
+			ESP_LOGW("sss", "H2S_cali_ppm=%.1f",H2S_cali_ppm);
+			ESP_LOGW("sss", " O3_cali_ppm=%.1f", O3_cali_ppm);
+			ESP_LOGW("sss", " CO_cali_ppm=%.1f", CO_cali_ppm);
+			ESP_LOGW("sss", "NO2_cali_ppm=%.1f",NO2_cali_ppm);
 
 
 			ble_send_noti_float("H2S", H2S_cali_ppm);
