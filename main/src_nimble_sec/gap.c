@@ -413,15 +413,24 @@ bool is_connection_encrypted(uint16_t conn_handle) {
     return desc.sec_state.encrypted;
 }
 
+
+extern  char DeviceID[20];
+
 int gap_init(void) {
     /* Local variables */
     int rc = 0;
+	char DeviceName[32] ; 
 
-    /* Call NimBLE GAP initialization API */
-    ble_svc_gap_init();
+	memset(DeviceName, 0, sizeof(DeviceName));
+	sprintf(DeviceName, "Device %s", DeviceID);
+
+//      /* Call NimBLE GAP initialization API */ //shcho for nimble --> bluedroid
+//      ble_svc_gap_init(); //shcho for nimble --> bluedroid
 
     /* Set GAP device name */
-    rc = ble_svc_gap_device_name_set(DEVICE_NAME);
+
+//      rc = ble_svc_gap_device_name_set(DEVICE_NAME);
+    rc = ble_svc_gap_device_name_set(DeviceName);
     if (rc != 0) {
         ESP_LOGE(TAG, "failed to set device name to %s, error code: %d",
                  DEVICE_NAME, rc);

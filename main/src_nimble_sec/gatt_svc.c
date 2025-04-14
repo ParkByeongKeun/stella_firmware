@@ -85,7 +85,7 @@ void vTasksendNotification_for_keepalive() //! For sending notifications periodi
     {
 
 	  xSemaphoreTake(sema_ble_send_noti, portMAX_DELAY);
-      sprintf(notification, "KEEP_ALIVE,1");
+      sprintf(notification, "KEEP_ALIVE,%d", val_increase++);
       om = ble_hs_mbuf_from_flat(notification, strlen(notification));
       ESP_LOGW("shcho", "notification(1)=%s", notification);
 

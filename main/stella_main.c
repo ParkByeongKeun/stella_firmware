@@ -46,6 +46,8 @@
 #define STORAGE_NAMESPACE "storage"
 static int count_CO2_ppm_valid = 0;
 
+char DeviceID[20];
+
 // During Cert(PM2008, CM1106, RS9A) : Sensor Connection Used for W5500
 
     
@@ -240,6 +242,20 @@ char my_mac_str[32];
 void app_main_stella_uart1(void);
 void app_main_stella_uart2(void);
 int send_CM1106_data( struct _CO2_ppm_packet *data );
+esp_err_t ijoon_get_nvs_str(uint8_t *key, uint8_t *value);
+esp_err_t ijoon_set_nvs_str(uint8_t *key, uint8_t *value);
+
+esp_err_t get_DeviceName_from_NVS(char *str)
+{
+	char *DeviceID_Test="3W12345";
+    ijoon_get_nvs_str((uint8_t*)"ID", (uint8_t *)str);
+	if( str[0] == 0 )
+	{
+		strcpy(str, DeviceID_Test);	
+	}
+	return 0;
+}
+
 
 
 
@@ -1134,6 +1150,31 @@ static int  register_restart_cmd()
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
     return 0;
 }
+
+static int do_esp32_setid(int argc, char **argv) {
+
+	char id[20];
+
+	memset( id, 0, sizeof(id));
+
+    strncpy(id, argv[1], MIN( 19,strlen(argv[1]) ) );
+	ijoon_set_nvs_str((uint8_t*)"ID", (uint8_t*)id);
+    ESP_LOGW("cli", "Deivce ID set to :%s", id);
+    return 0;
+}
+
+static int  register_setid_cmd()
+{
+    const esp_console_cmd_t cmd = {
+        .command = "setid",
+        .help = "setid 3W00010",
+        .hint = NULL,
+        .func = do_esp32_setid,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+    return 0;
+}
+
 
 int do_fan_report(void)
 {
@@ -3087,6 +3128,8 @@ void register_stella_cmd(void)
 
 	register_charge_en();
 
+	register_setid_cmd();
+
 }
 
 int Uart_mux_setup(int direction)
@@ -3525,7 +3568,9 @@ void app_main(void)
 	}
 	//--------------------------------------------------------------
 	
-	//--------------------------------------------------------------
+	//--------------------------------------------------------------	
+	get_DeviceName_from_NVS( DeviceID ) ;
+
     if ( flag_IS_WEARABLE == 1 )
 	{
 

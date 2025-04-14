@@ -28,6 +28,14 @@
 #include <time.h>
 #include <sys/time.h>
 
+
+extern esp_err_t ijoon_get_nvs_str(uint8_t *key, uint8_t *value);
+extern esp_err_t ijoon_set_nvs_str(uint8_t *key, uint8_t *value);
+#define MIN(x, y) ((x) < (y) ? (x) : (y)) //-> x, y중에 작은값 반환
+#define MAX(x, y) ((x) > (y) ? (x) : (y))//-> x, y중에 큰값 반환
+
+
+
 static const char* TAG = "uart_select_example";
 extern SemaphoreHandle_t sema_uart1 ;
 extern SemaphoreHandle_t sema_uart2 ;
@@ -815,6 +823,30 @@ static void uart_select_task_uart2(void *arg) // receive 만 한다.
 					    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
 					    ESP_LOGI(TAG, "The current date/time in  Seoul   is: %s", strftime_buf);
 
+					}
+					if( strncmp(buf_uart2,"id:", 3) == STR_MATCH )
+					{
+						char id[20];
+
+						memset( id, 0, sizeof(id));
+
+					    strncpy(id, &buf_uart2[3], MIN( 19,strlen(&buf_uart2[3]) ) );
+						ijoon_set_nvs_str((uint8_t*)"ID", (uint8_t*)id);
+					    ESP_LOGW(TAG, "Deivce ID set to :%s", id);
+					}
+					if( strncmp(buf_uart2,"reboot:", 7) == STR_MATCH )
+					{
+						ESP_LOGE("shcho", "ESP32-S3 reboot after 2 secs");
+						ESP_LOGE("shcho", "ESP32-S3 reboot after 2 secs");
+						ESP_LOGE("shcho", "ESP32-S3 reboot after 2 secs");
+						ESP_LOGE("shcho", "ESP32-S3 reboot after 2 secs");
+					    vTaskDelay(2000 / portTICK_PERIOD_MS);
+						esp_restart();
+						while(1)
+						{
+							ESP_LOGE("shcho", "Wait restart");
+					    	vTaskDelay(1000 / portTICK_PERIOD_MS);
+						}
 					}
                 } else {
                     ESP_LOGE("uart2", "UART2 read error");
