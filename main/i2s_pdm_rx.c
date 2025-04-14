@@ -244,6 +244,10 @@ void task_send_JSON (void* arg)
 //      	size_t buf_idx = 0;
         size_t rx_bytes = xMessageBufferReceive( buf_send_msg_handle, (void*)(&pdm_msg), sizeof(struct _pdm_msg), portMAX_DELAY );
         assert(rx_bytes == sizeof(struct _pdm_msg));
+		char pdm_db_str[10];
+
+		memset(pdm_db_str, 0, sizeof(pdm_db_str));
+		sprintf(pdm_db_str,"%.1f", 20*log10(pdm_msg.avg));
 
 		{
 		    ESP_LOGI(JSON_TAG, "Serialize.....PDM_Result");
@@ -256,7 +260,10 @@ void task_send_JSON (void* arg)
 //  		   	cJSON_AddNumberToObject(root, "PDM_Peak",              peak_u16[buf_idx]);
 		   	cJSON_AddNumberToObject(root, "PDM_Strongest_Hz",      pdm_msg.strongest_Hz);
 		   	cJSON_AddNumberToObject(root, "PDM_Avg(raw)",               pdm_msg.avg  );
-		   	cJSON_AddNumberToObject(root, "PDM_Avg",               20*log10(pdm_msg.avg)  );
+
+		   	cJSON_AddStringToObject(root, "PDM_Avg",               pdm_db_str);
+//  		   	cJSON_AddNumberToObject(root, "PDM_Avg",               20*log10(pdm_msg.avg)  );
+
 		   	cJSON_AddNumberToObject(root, "PDM_Peak",              pdm_msg.peak );
 
 //  			free(pdm_msg);
