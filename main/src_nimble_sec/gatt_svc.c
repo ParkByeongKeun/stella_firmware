@@ -140,6 +140,37 @@ void vTasksendNotification_for_keepalive() //! For sending notifications periodi
   }
   vTaskDelete(NULL);
 }
+int ble_send_noti_float(char *id, float value)
+{
+  	int rc = -1;
+  	struct os_mbuf *om;
+	  
+    if (notify_state) 
+	//!! This value is checked so that we don't send notifications 
+	//if no one has subscribed to our notification handle.
+	{
+		xSemaphoreTake(sema_ble_send_noti, portMAX_DELAY);
+
+		memset(notification, 0, sizeof(notification));
+		sprintf(notification, "%s,%.1f", id, value);
+
+		om = ble_hs_mbuf_from_flat(notification, strlen(notification));
+		ESP_LOGW("shcho", "notification(1)=%s", notification);
+
+//        rc = ble_gattc_notify_custom(conn_handle, notification_handle, om);
+		rc = ble_gattc_notify_custom(conn_handle, heart_rate_chr_val_handle, om);
+		printf("\n rc=%d\n", rc);
+		if (rc != 0)
+		{
+			printf("\n error notifying; rc(%s)\n", id);
+		}
+
+      	vTaskDelay(100 / portTICK_PERIOD_MS);
+		xSemaphoreGive(sema_ble_send_noti);
+	}
+	return rc;
+}
+
 
 int ble_send_noti_int(char *id, int value)
 {

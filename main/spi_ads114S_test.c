@@ -14,6 +14,7 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include <inttypes.h>
+#include <math.h>
 
 #include "sdkconfig.h"
 #include "esp_log.h"
@@ -36,6 +37,18 @@ extern int send_to_server(char *payload, int len);
 
 static const char *JSON_TAG = "JSON";
 
+double Sensitivity_O3 =  60.66;
+double Sensitivity_CO =   4.42;
+double Sensitivity_NO2 = 22.48;
+double TIA_Gain_O3 =  499;
+double TIA_Gain_CO =  100; 
+double TIA_Gain_NO2 = 499;
+double M_O3  = 0.0;
+double M_CO  = 0.0;
+double M_NO2  = 0.0;
+double Vgas0_O3  = 0.83;
+double Vgas0_CO  = 0.829;
+double Vgas0_NO2  = 0.887;
 
 /*
 //   This code demonstrates how to use the SPI master half duplex mode to read/write a AT932C46D EEPROM (8-bit mode).
@@ -115,6 +128,9 @@ int gpio9_set_to_input_from_spi_cs(void);// 기존 GPIO9(SPI_CS)가 고장이라
 
 extern int ble_send_noti_int(char *id, int value);
 extern int ble_send_noti_str(char *id, char* value);
+extern int ble_send_noti_float(char *id, float value);
+
+
 
 
 static esp_err_t ads114s_wait_done_by_intr(ads114s_context_t* ctx)
@@ -699,10 +715,90 @@ void spi2_adc_task(void *arg)
 				send_to_server(my_json_string, strlen(my_json_string));
 				xSemaphoreGive(sema_tcp);
 			}
+//  			ble_send_noti_int("CO", adc_val[2]);
+//  			ble_send_noti_int("O3", adc_val[1]);
+//  			ble_send_noti_int("NO2",adc_val[3]);
 
-			ble_send_noti_int("CO", adc_val[2]);
-			ble_send_noti_int("O3", adc_val[1]);
-			ble_send_noti_int("NO2",adc_val[3]);
+			double  CO_cali_volt = 0 ;
+			double  O3_cali_volt = 0 ;
+			double NO2_cali_volt = 0 ;
+
+			double NH3_cali_volt = 0 ;
+			double NH3_Rs = 0 ;
+			double NH3_Ro = 1000 ; //fixed
+			double NH3_Rs_divide_by_Ro = 0 ;
+			double NH3_Sensitivity = 15 ;
+			double NH3_slope = -0.013960 ; // fixed
+			double NH3_y_intersect = 0.8351 ; // fixed
+			double NH3_log = 0;
+			double NH3_cali_ppm = 0;
+
+			double  CO_cali_ppm = 0 ;
+			double  O3_cali_ppm = 0 ;
+			double NO2_cali_ppm = 0 ;
+
+//  			M_O3  = (Sensitivity_O3  * TIA_Gain_O3  * (10^-9) * (1e3));
+//  			M_CO  = (Sensitivity_CO  * TIA_Gain_CO  * (10^-9) * (1e3));
+//  			M_NO2 = (Sensitivity_NO2 * TIA_Gain_NO2 * (10^-9) * (1e3));
+			M_O3  = (Sensitivity_O3  * TIA_Gain_O3)/(1000000);  //* (10^-9) * (1e3));
+			M_CO  = (Sensitivity_CO  * TIA_Gain_CO)/(1000000);  //* (10^-9) * (1e3));
+			M_NO2 = (Sensitivity_NO2 * TIA_Gain_NO2)/(1000000); //* (10^-9) * (1e3));
+
+			ESP_LOGW("sss", "----------------------------------------");
+			ESP_LOGW("sss", "M_O3=%f", M_O3);
+			ESP_LOGW("sss", "M_CO=%f", M_CO);
+			ESP_LOGW("sss", "M_NO2=%f", M_NO2);
+
+
+
+
+			 O3_cali_volt = 3.3*(adc_val[1]*(2.5/3.3))/(1<<16);
+			 CO_cali_volt = 3.3*(adc_val[2]*(2.5/3.3))/(1<<16);
+			NO2_cali_volt = 3.3*(adc_val[3]*(2.5/3.3))/(1<<16);
+
+//  //  			adc_val[4] = 10772; // test
+			NH3_cali_volt = ((adc_val[4]*2.5)/(1<<16));
+			NH3_Rs        = (( 5 - NH3_cali_volt) * NH3_Ro ) / (NH3_cali_volt);
+			NH3_Rs_divide_by_Ro = (NH3_Rs ) / NH3_Ro;
+			NH3_log = log10(NH3_Rs_divide_by_Ro/NH3_Sensitivity);
+			NH3_cali_ppm = (NH3_log - NH3_y_intersect)/NH3_slope + 1 ;
+
+			ESP_LOGW("sss", "----------------------------------------");
+			ESP_LOGW("sss", "NH3_cali_volt=%f",NH3_cali_volt);
+			ESP_LOGW("sss", "NH3_Rs=%f",NH3_Rs);
+			ESP_LOGW("sss", "NH3_Rs_divide_by_Ro=%f",NH3_Rs_divide_by_Ro);
+			ESP_LOGW("sss", "NH3_log=%f",NH3_log);
+			ESP_LOGW("sss", "NH3_cali_ppm=%f",NH3_cali_ppm);
+			ESP_LOGW("sss", "----------------------------------------");
+
+			ESP_LOGW("sss", "O3_cali_volt=%f", O3_cali_volt);
+			ESP_LOGW("sss", "CO_cali_volt=%f", CO_cali_volt);
+			ESP_LOGW("sss", "NO2_cali_volt=%f",NO2_cali_volt);
+
+
+//  			 O3_cali_ppm = (1/M_O3)*(O3_cali_volt-Vgas0_O3);
+//  			 CO_cali_ppm = (1/M_CO)*(CO_cali_volt-Vgas0_CO);
+//  			NO2_cali_ppm = (1/M_NO2)*(NO2_cali_volt-Vgas0_NO2);
+			 O3_cali_ppm = (O3_cali_volt-Vgas0_O3)/M_O3;
+			 CO_cali_ppm = (CO_cali_volt-Vgas0_CO)/M_CO;
+			NO2_cali_ppm = (NO2_cali_volt-Vgas0_NO2)/M_NO2;
+
+			ESP_LOGW("sss", "----------------------------------------");
+			ESP_LOGW("sss", "O3_cali_ppm=%.1f", O3_cali_ppm);
+			ESP_LOGW("sss", "CO_cali_ppm=%.1f", CO_cali_ppm);
+			ESP_LOGW("sss", "NO2_cali_ppm=%.1f",NO2_cali_ppm);
+
+			O3_cali_ppm = MAX(0.1, O3_cali_ppm);
+			CO_cali_ppm = MAX(0.1, CO_cali_ppm);
+			NO2_cali_ppm = MAX(0.1, NO2_cali_ppm);
+			NH3_cali_ppm = MAX(0.1, NH3_cali_ppm);
+
+
+
+			ble_send_noti_float("O3", O3_cali_ppm);
+			ble_send_noti_float("CO", CO_cali_ppm);
+			ble_send_noti_float("NO2",NO2_cali_ppm);
+			ble_send_noti_float("NH3",NH3_cali_ppm);
 		   	cJSON_Delete(root);
 		}
 //  	    while (1) {

@@ -2671,7 +2671,9 @@ int do_rht_voc_report(sht4x_t *dev_sht4x, sgp40_t *dev_sgp40,
    	cJSON_Delete(root);
 
 	ble_send_noti_str("Temperature", buffer_sht40_temp);
+	ble_send_noti_str("KEEP_ALIVE", "term1");
 	ble_send_noti_str("Humidity",    buffer_sht40_humi);
+	ble_send_noti_str("KEEP_ALIVE", "term2");
 	ble_send_noti_int("TVOC",        voc_index);
 	return 0;
 }
