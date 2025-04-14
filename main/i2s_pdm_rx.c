@@ -14,6 +14,8 @@
 #include "esp_err.h"
 #include "sdkconfig.h"
 #include "i2s_pdm_example.h"
+
+#include <math.h>
 //  #include "i2s_example_pins.h"
 //
 //
@@ -253,7 +255,8 @@ void task_send_JSON (void* arg)
 //  		   	cJSON_AddNumberToObject(root, "PDM_Avg",               avg_u16[buf_idx] );
 //  		   	cJSON_AddNumberToObject(root, "PDM_Peak",              peak_u16[buf_idx]);
 		   	cJSON_AddNumberToObject(root, "PDM_Strongest_Hz",      pdm_msg.strongest_Hz);
-		   	cJSON_AddNumberToObject(root, "PDM_Avg",               pdm_msg.avg  );
+		   	cJSON_AddNumberToObject(root, "PDM_Avg(raw)",               pdm_msg.avg  );
+		   	cJSON_AddNumberToObject(root, "PDM_Avg",               20*log10(pdm_msg.avg)  );
 		   	cJSON_AddNumberToObject(root, "PDM_Peak",              pdm_msg.peak );
 
 //  			free(pdm_msg);

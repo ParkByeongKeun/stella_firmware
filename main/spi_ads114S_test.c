@@ -792,45 +792,50 @@ void spi2_adc_task(void *arg)
 			 CO_cali_ppm = ( CO_cali_volt-Vgas0_CO )/M_CO;
 			NO2_cali_ppm = (NO2_cali_volt-Vgas0_NO2)/M_NO2;
 
+
+			ESP_LOGE("shcho", "O3/NO2는 높게 나와서 /100.0을 함");
+			  O3_cali_ppm /= 100.0;
+			 NO2_cali_ppm /= 100.0;
+
 			ESP_LOGW("sss", "----------------------------------------");
-			ESP_LOGW("sss", "H2S_cali_ppm=%.1f",H2S_cali_ppm);
-			ESP_LOGW("sss", " O3_cali_ppm=%.1f", O3_cali_ppm);
-			ESP_LOGW("sss", " CO_cali_ppm=%.1f", CO_cali_ppm);
-			ESP_LOGW("sss", "NO2_cali_ppm=%.1f",NO2_cali_ppm);
+			ESP_LOGW("sss", "H2S_cali_ppm=%.3f",H2S_cali_ppm);
+			ESP_LOGW("sss", " O3_cali_ppm=%.3f", O3_cali_ppm);
+			ESP_LOGW("sss", " CO_cali_ppm=%.3f", CO_cali_ppm);
+			ESP_LOGW("sss", "NO2_cali_ppm=%.3f",NO2_cali_ppm);
 
-			H2S_cali_ppm = MAX(0.1,  H2S_cali_ppm);
-			 O3_cali_ppm = MAX(0.1,   O3_cali_ppm);
-			 CO_cali_ppm = MAX(0.1,   CO_cali_ppm);
-			NO2_cali_ppm = MAX(0.1,  NO2_cali_ppm);
-			NH3_cali_ppm = MAX(0.1, NH3_cali_ppm);
+			H2S_cali_ppm = MAX(0.001,  H2S_cali_ppm);
+			 O3_cali_ppm = MAX(0.001,   O3_cali_ppm);
+			 CO_cali_ppm = MAX(0.001,   CO_cali_ppm);
+			NO2_cali_ppm = MAX(0.001,  NO2_cali_ppm);
+			NH3_cali_ppm = MAX(0.001,  NH3_cali_ppm);
 
-			ESP_LOGW("sss", "--------some Changed--------------------");
-			ESP_LOGW("sss", "H2S_cali_ppm=%.1f",H2S_cali_ppm);
-			ESP_LOGW("sss", " O3_cali_ppm=%.1f", O3_cali_ppm);
-			ESP_LOGW("sss", " CO_cali_ppm=%.1f", CO_cali_ppm);
-			ESP_LOGW("sss", "NO2_cali_ppm=%.1f",NO2_cali_ppm);
+			ESP_LOGW("sss", "-------- some Changed : Min 0.001 --------------------");
+			ESP_LOGW("sss", "H2S_cali_ppm=%.3f",H2S_cali_ppm);
+			ESP_LOGW("sss", " O3_cali_ppm=%.3f", O3_cali_ppm);
+			ESP_LOGW("sss", " CO_cali_ppm=%.3f", CO_cali_ppm);
+			ESP_LOGW("sss", "NO2_cali_ppm=%.3f",NO2_cali_ppm);
 
 
 			ble_send_noti_float("H2S", H2S_cali_ppm);
 			ble_send_noti_float("O3",   O3_cali_ppm);
 			ble_send_noti_float("CO",   CO_cali_ppm);
-			ble_send_noti_float("NO2",NO2_cali_ppm);
-			ble_send_noti_float("NH3",NH3_cali_ppm);
+			ble_send_noti_float("NO2", NO2_cali_ppm);
+			ble_send_noti_float("NH3", NH3_cali_ppm);
 
 		    ESP_LOGI(JSON_TAG, "Serialize.....ADC_Result");
 		    cJSON *root;
 			char temp[128];
 		   	root = cJSON_CreateObject();
 	    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", H2S_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", H2S_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_H2S_val",   temp   );
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", O3_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", O3_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_O3_val",   temp   );
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", CO_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", CO_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_CO_val",   temp   );
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", NO2_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", NO2_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NO2_val",   temp   );
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.1f", NH3_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", NH3_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NH3_val",   temp   );
 
 		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_H2S_val",      adc_val[0]);
