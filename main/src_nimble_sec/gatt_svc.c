@@ -152,7 +152,8 @@ int ble_send_noti_float(char *id, float value)
 		xSemaphoreTake(sema_ble_send_noti, portMAX_DELAY);
 
 		memset(notification, 0, sizeof(notification));
-		sprintf(notification, "%s,%.1f", id, value);
+		sprintf(notification, "%s,%.3f", id, value);
+
 
 		om = ble_hs_mbuf_from_flat(notification, strlen(notification));
 		ESP_LOGW("shcho", "notification(1)=%s", notification);

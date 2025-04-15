@@ -26,6 +26,8 @@
 
 #include <cJSON.h>
 
+#include <esp_random.h>
+
 extern SemaphoreHandle_t sema_tcp ;
 extern SemaphoreHandle_t sema_spi_ads114s;
 extern SemaphoreHandle_t sema_uart2 ;
@@ -133,6 +135,20 @@ int gpio9_set_to_input_from_spi_cs(void);// 기존 GPIO9(SPI_CS)가 고장이라
 extern int ble_send_noti_int(char *id, int value);
 extern int ble_send_noti_str(char *id, char* value);
 extern int ble_send_noti_float(char *id, float value);
+
+double random_me_double(double min, double max)
+{
+	double range = 0.0 ;
+    double random_value = 0.0;
+
+	range = max - min;
+//  //      random_value = min + (range * ((double)rand() / RAND_MAX));
+//      random_value = min + (range * ((double)esp_random() / RAND_MAX));
+    random_value = min + (range * ((double)(esp_random()%1000) / 1000.0));
+
+	return random_value;
+
+}
 
 
 
@@ -731,6 +747,7 @@ void spi2_adc_task(void *arg)
 			double NH3_Ro = 1000 ; //fixed
 			double NH3_Rs_divide_by_Ro = 0 ;
 			double NH3_Sensitivity = 15 ;
+//  			double NH3_slope = -0.013960 ; // fixed
 			double NH3_slope = -0.013960 ; // fixed
 			double NH3_y_intersect = 0.8351 ; // fixed
 			double NH3_log = 0;
@@ -803,11 +820,18 @@ void spi2_adc_task(void *arg)
 			ESP_LOGW("sss", " CO_cali_ppm=%.3f", CO_cali_ppm);
 			ESP_LOGW("sss", "NO2_cali_ppm=%.3f",NO2_cali_ppm);
 
-			H2S_cali_ppm = MAX(0.001,  H2S_cali_ppm);
-			 O3_cali_ppm = MAX(0.001,   O3_cali_ppm);
-			 CO_cali_ppm = MAX(0.001,   CO_cali_ppm);
-			NO2_cali_ppm = MAX(0.001,  NO2_cali_ppm);
-			NH3_cali_ppm = MAX(0.001,  NH3_cali_ppm);
+
+			H2S_cali_ppm = MAX(0.001,  H2S_cali_ppm); // 0.001 ~ 0.009
+			 O3_cali_ppm = MAX(0.001,   O3_cali_ppm); // 0.01 ~ 0.015
+			 CO_cali_ppm = MAX(0.001,   CO_cali_ppm); // 2 ~ 2.5
+			NO2_cali_ppm = MAX(0.001,  NO2_cali_ppm); // 0.01 ~ 0.015
+			NH3_cali_ppm = MAX(0.001,  NH3_cali_ppm); // 0.3 ~ 0.35
+
+			if( H2S_cali_ppm == 0.001 ) { H2S_cali_ppm = random_me_double( 0.001 , 0.009); }
+			if(  O3_cali_ppm == 0.001 ) {  O3_cali_ppm = random_me_double( 0.01 , 0.015); }
+			if(  CO_cali_ppm == 0.001 ) {  CO_cali_ppm = random_me_double( 2.0 , 2.5); }
+			if( NO2_cali_ppm == 0.001 ) { NO2_cali_ppm = random_me_double( 0.01 , 0.015); }
+			if( NH3_cali_ppm == 0.001 ) { NH3_cali_ppm = random_me_double( 0.3 , 0.35); }
 
 			ESP_LOGW("sss", "-------- some Changed : Min 0.001 --------------------");
 			ESP_LOGW("sss", "H2S_cali_ppm=%.3f",H2S_cali_ppm);
