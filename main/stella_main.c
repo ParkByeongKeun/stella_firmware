@@ -1176,6 +1176,55 @@ static int  register_setid_cmd()
 }
 
 
+static int do_spec_sensor_sensitivity(int argc, char **argv) {
+
+	char id[20];
+
+	//shcho순서에 주의
+	ijoon_set_nvs_str((uint8_t*)"S_NO2", (uint8_t*)argv[1]);
+	ijoon_set_nvs_str((uint8_t*)"S_CO",  (uint8_t*)argv[2]);
+	ijoon_set_nvs_str((uint8_t*)"S_O3",  (uint8_t*)argv[3]);
+	ijoon_set_nvs_str((uint8_t*)"S_H2S", (uint8_t*)argv[4]);
+	return 0;
+}
+
+static int  register_spec_sensor_sensitivity()
+{
+    const esp_console_cmd_t cmd = {
+        .command = "sens",
+        .help = "sens 22.48 4.42 60.66 214.13",
+        .hint = NULL,
+        .func = do_spec_sensor_sensitivity,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+    return 0;
+}
+
+static int do_spec_sensor_vgas0(int argc, char **argv) {
+
+	char id[20];
+	//shcho순서에 주의
+	ijoon_set_nvs_str((uint8_t*)"VGAS0_H2S", (uint8_t*)argv[1]);
+	ijoon_set_nvs_str((uint8_t*)"VGAS0_O3" , (uint8_t*)argv[2]);
+	ijoon_set_nvs_str((uint8_t*)"VGAS0_CO" , (uint8_t*)argv[3]);
+	ijoon_set_nvs_str((uint8_t*)"VGAS0_NO2", (uint8_t*)argv[4]);
+	return 0;
+}
+
+static int  register_spec_sensor_vgas0()
+{
+    const esp_console_cmd_t cmd = {
+        .command = "vgas0",
+        .help = "vgas0 (adcval 4ea)",
+        .hint = NULL,
+        .func = do_spec_sensor_vgas0,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+    return 0;
+}
+
+
+
 int do_fan_report(void)
 {
 	// FAN Controller Resigter Read
@@ -3134,6 +3183,8 @@ void register_stella_cmd(void)
 	register_charge_en();
 
 	register_setid_cmd();
+	register_spec_sensor_sensitivity();
+	register_spec_sensor_vgas0();
 
 }
 

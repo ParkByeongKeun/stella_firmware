@@ -36,6 +36,7 @@ extern char my_mac_str[32];
 extern int flag_IS_WEARABLE ;
 extern int fd_uart2 ;
 extern int send_to_server(char *payload, int len);
+extern esp_err_t ijoon_get_nvs_str(uint8_t *key, uint8_t *value);
 
 static const char *JSON_TAG = "JSON";
 
@@ -758,13 +759,54 @@ void spi2_adc_task(void *arg)
 			double  O3_cali_ppm = 0 ;
 			double NO2_cali_ppm = 0 ;
 
+			uint8_t S_H2S[10];
+			uint8_t S_O3[10];
+			uint8_t S_CO[10];
+			uint8_t S_NO2[10];
+
+			//---------------------------------------------------------------
+			ijoon_get_nvs_str((uint8_t*)"S_H2S", S_H2S);
+			ijoon_get_nvs_str((uint8_t*)"S_O3" , S_O3 );
+			ijoon_get_nvs_str((uint8_t*)"S_CO" , S_CO );
+			ijoon_get_nvs_str((uint8_t*)"S_NO2", S_NO2);
+
+			if( S_H2S[0] != 0 ) { Sensitivity_H2S = atof((char*)S_H2S); }
+			if( S_O3 [0] != 0 ) { Sensitivity_O3  = atof((char*)S_O3 ); }
+			if( S_CO [0] != 0 ) { Sensitivity_CO  = atof((char*)S_CO ); }
+			if( S_NO2[0] != 0 ) { Sensitivity_NO2 = atof((char*)S_NO2); }
+
+			ESP_LOGW("sss", "S_H2S=%s, %.3f, %.2f", S_H2S, atof((char*)S_H2S), Sensitivity_H2S);
+			ESP_LOGW("sss", "S_O3 =%s, %.3f, %.2f", S_O3,  atof((char*)S_O3 ), Sensitivity_O3 );
+			ESP_LOGW("sss", "S_CO =%s, %.3f, %.2f", S_CO,  atof((char*)S_CO ), Sensitivity_CO );
+			ESP_LOGW("sss", "S_NO2=%s, %.3f, %.2f", S_NO2, atof((char*)S_NO2), Sensitivity_NO2);
+			//---------------------------------------------------------------
+
+			//---------------------------------------------------------------
+			ijoon_get_nvs_str((uint8_t*)"VGAS0_H2S", S_H2S);
+			ijoon_get_nvs_str((uint8_t*)"VGAS0_O3" ,S_O3 );
+			ijoon_get_nvs_str((uint8_t*)"VGAS0_CO" ,S_CO );
+			ijoon_get_nvs_str((uint8_t*)"VGAS0_NO2", S_NO2);
+
+			if( S_H2S[0] != 0 ) { Vgas0_H2S = (2.5*atof((char*)S_H2S))/(1<<16) ; }
+			if( S_O3 [0] != 0 ) { Vgas0_O3  = (2.5*atof((char*)S_O3 ))/(1<<16) ; }
+			if( S_CO [0] != 0 ) { Vgas0_CO  = (2.5*atof((char*)S_CO ))/(1<<16)  ; }
+			if( S_NO2[0] != 0 ) { Vgas0_NO2 = (2.5*atof((char*)S_NO2))/(1<<16) ; }
+
+
+			ESP_LOGW("sss", "VGAS0_H2S=%s, %.6f, %.6f", S_H2S, atof((char*)S_H2S), Vgas0_H2S);
+			ESP_LOGW("sss", "VGAS0_O3 =%s, %.6f, %.6f", S_O3,  atof((char*)S_O3 ), Vgas0_O3 );
+			ESP_LOGW("sss", "VGAS0_CO =%s, %.6f, %.6f", S_CO,  atof((char*)S_CO ), Vgas0_CO );
+			ESP_LOGW("sss", "VGAS0_NO2=%s, %.6f, %.6f", S_NO2, atof((char*)S_NO2), Vgas0_NO2);
+			//---------------------------------------------------------------
+
 //  			M_O3  = (Sensitivity_O3  * TIA_Gain_O3  * (10^-9) * (1e3));
 //  			M_CO  = (Sensitivity_CO  * TIA_Gain_CO  * (10^-9) * (1e3));
 //  			M_NO2 = (Sensitivity_NO2 * TIA_Gain_NO2 * (10^-9) * (1e3));
-			M_H2S = (Sensitivity_H2S * TIA_Gain_H2S)/(1000000);  //* (10^-9) * (1e3));
-			M_O3  = (Sensitivity_O3  * TIA_Gain_O3 )/(1000000);  //* (10^-9) * (1e3));
-			M_CO  = (Sensitivity_CO  * TIA_Gain_CO )/(1000000);  //* (10^-9) * (1e3));
-			M_NO2 = (Sensitivity_NO2 * TIA_Gain_NO2)/(1000000); //* (10^-9) * (1e3));
+			M_H2S = (Sensitivity_H2S   * TIA_Gain_H2S)/(1000000);  //* (10^-9) * (1e3));
+			M_O3  = (Sensitivity_O3    * TIA_Gain_O3 )/(1000000);  //* (10^-9) * (1e3));
+//  		M_CO  = (Sensitivity_CO    * TIA_Gain_CO )/(1000000);  //* (10^-9) * (1e3));
+			M_CO  = (Sensitivity_CO*10 * TIA_Gain_CO )/(1000000);  //* (10^-9) * (1e3));
+			M_NO2 = (Sensitivity_NO2   * TIA_Gain_NO2)/(1000000); //* (10^-9) * (1e3));
 
 			ESP_LOGW("sss", "----------------------------------------");
 			ESP_LOGW("sss", "M_H2S=%f", M_H2S);
@@ -775,10 +817,14 @@ void spi2_adc_task(void *arg)
 
 
 
-		    H2S_cali_volt = 3.3*(adc_val[0]*(2.5/3.3))/(1<<16);
-			 O3_cali_volt = 3.3*(adc_val[1]*(2.5/3.3))/(1<<16);
-			 CO_cali_volt = 3.3*(adc_val[2]*(2.5/3.3))/(1<<16);
-			NO2_cali_volt = 3.3*(adc_val[3]*(2.5/3.3))/(1<<16);
+//  		    H2S_cali_volt = 3.3*(adc_val[0]*(2.5/3.3))/(1<<16);
+//  			 O3_cali_volt = 3.3*(adc_val[1]*(2.5/3.3))/(1<<16);
+//  			 CO_cali_volt = 3.3*(adc_val[2]*(2.5/3.3))/(1<<16);
+//  			NO2_cali_volt = 3.3*(adc_val[3]*(2.5/3.3))/(1<<16);
+		    H2S_cali_volt = (adc_val[0]*2.5)/(1<<16);
+			 O3_cali_volt = (adc_val[1]*2.5)/(1<<16);
+			 CO_cali_volt = (adc_val[2]*2.5)/(1<<16);
+			NO2_cali_volt = (adc_val[3]*2.5)/(1<<16);
 
 //  //  			adc_val[4] = 10772; // test
 			NH3_cali_volt = ((adc_val[4]*2.5)/(1<<16));
@@ -795,10 +841,10 @@ void spi2_adc_task(void *arg)
 			ESP_LOGW("sss", "NH3_cali_ppm=%f",NH3_cali_ppm);
 			ESP_LOGW("sss", "----------------------------------------");
 
-			ESP_LOGW("sss", "H2S_cali_volt=%f", H2S_cali_volt);
-			ESP_LOGW("sss", " O3_cali_volt=%f",  O3_cali_volt);
-			ESP_LOGW("sss", " CO_cali_volt=%f",  CO_cali_volt);
-			ESP_LOGW("sss", "NO2_cali_volt=%f", NO2_cali_volt);
+			ESP_LOGW("sss", "H2S_cali_volt=%f,vgas0_volt=%f", H2S_cali_volt, Vgas0_H2S);
+			ESP_LOGW("sss", " O3_cali_volt=%f,vgas0_volt=%f",  O3_cali_volt, Vgas0_O3 );
+			ESP_LOGW("sss", " CO_cali_volt=%f,vgas0_volt=%f",  CO_cali_volt, Vgas0_CO );
+			ESP_LOGW("sss", "NO2_cali_volt=%f,vgas0_volt=%f", NO2_cali_volt, Vgas0_NO2);
 
 
 //  			 O3_cali_ppm = (1/M_O3)*(O3_cali_volt-Vgas0_O3);
