@@ -7,6 +7,9 @@ if [ -z $1 ] ; then
 	exit
 fi
 hostname=$1
-scp build/stella_firmware.bin                 stella@$hostname:/home/stella/stella_firmware/build/stella_firmware.bin
-scp build/bootloader/bootloader.bin           stella@$hostname:/home/stella/stella_firmware/build/bootloader/bootloader.bin
-scp build/partition_table/partition-table.bin stella@$hostname:/home/stella/stella_firmware/build/partition_table/partition-table.bin
+
+tar czf - \
+	build/stella_firmware.bin \
+	build/bootloader/bootloader.bin \
+	build/partition_table/partition-table.bin \
+| ssh stella@$hostname 'mkdir -p /home/stella/stella_firmware/build/bootloader /home/stella/stella_firmware/build/partition_table && tar xzf - -C /home/stella/stella_firmware'

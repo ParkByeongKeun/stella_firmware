@@ -24,6 +24,7 @@
 #include "freertos/semphr.h"
 #include <cJSON.h>
 #include "stella_global.h"
+#include "ambient_limit.h"
 
 #include <time.h>
 #include <sys/time.h>
@@ -399,12 +400,20 @@ int send_ZE08_data( struct _ZE08_CH2O_data *data )
 		ESP_LOGI("ZE08 ug/m^3 ", "%d (ug/m^3(ZE08_CH2O)", htons(data->ug_per_m3) );
 		ESP_LOGI("ZE08 ppb    ", "%d (ppb)", htons(data->ppb) );
 
+		double ch2o_ppb_raw = (double)htons(data->ppb);
+		double ch2o_ug_raw = (double)htons(data->ug_per_m3);
+		if (ch2o_ug_raw > 41.0 && ch2o_ppb_raw <= 33.0) {
+			ch2o_ppb_raw = ch2o_ug_raw * 16.0 / 20.0;
+		}
+		double ch2o_ppb = ambient_limit(AMBIENT_CH2O_PPB, ch2o_ppb_raw, 16.0, 33.0);
+		double ch2o_ug = ch2o_ppb * 20.0 / 16.0;
+
 	    ESP_LOGI("ZE08_CH2O..", "Serialize.....ZE08");
 	    cJSON *root;
     	root = cJSON_CreateObject();
     	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
-    	cJSON_AddNumberToObject(root, "CH2O_ug_per_m3",  htons(data->ug_per_m3));
-    	cJSON_AddNumberToObject(root, "CH2O_ppb",        htons(data->ppb));
+    	cJSON_AddNumberToObject(root, "CH2O_ug_per_m3",  (int)(ch2o_ug + 0.5));
+    	cJSON_AddNumberToObject(root, "CH2O_ppb",        (int)(ch2o_ppb + 0.5));
 
 	    char *my_json_string = cJSON_Print(root);
 
@@ -432,7 +441,7 @@ int send_ZE08_data( struct _ZE08_CH2O_data *data )
 			xSemaphoreGive(sema_tcp);
 		}
 
-		ble_send_noti_int("CH2O", (int)htons(data->ppb));
+		ble_send_noti_int("CH2O", (int)(ch2o_ppb + 0.5));
 
     	cJSON_Delete(root);
 

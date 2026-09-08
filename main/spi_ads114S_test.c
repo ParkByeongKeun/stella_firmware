@@ -27,6 +27,7 @@
 #include <cJSON.h>
 
 #include <esp_random.h>
+#include "ambient_limit.h"
 
 extern SemaphoreHandle_t sema_tcp ;
 extern SemaphoreHandle_t sema_spi_ads114s;
@@ -867,17 +868,12 @@ void spi2_adc_task(void *arg)
 			ESP_LOGW("sss", "NO2_cali_ppm=%.3f",NO2_cali_ppm);
 
 
-			H2S_cali_ppm = MAX(0.001,  H2S_cali_ppm); // 0.001 ~ 0.009
-			 O3_cali_ppm = MAX(0.001,   O3_cali_ppm); // 0.01 ~ 0.015
-			 CO_cali_ppm = MAX(0.001,   CO_cali_ppm); // 2 ~ 2.5
-			NO2_cali_ppm = MAX(0.001,  NO2_cali_ppm); // 0.01 ~ 0.015
-			NH3_cali_ppm = MAX(0.001,  NH3_cali_ppm); // 0.3 ~ 0.35
 
-			if( H2S_cali_ppm == 0.001 ) { H2S_cali_ppm = random_me_double( 0.001 , 0.009); }
-			if(  O3_cali_ppm == 0.001 ) {  O3_cali_ppm = random_me_double( 0.01 , 0.015); }
-			if(  CO_cali_ppm == 0.001 ) {  CO_cali_ppm = random_me_double( 2.0 , 2.5); }
-			if( NO2_cali_ppm == 0.001 ) { NO2_cali_ppm = random_me_double( 0.01 , 0.015); }
-			if( NH3_cali_ppm == 0.001 ) { NH3_cali_ppm = random_me_double( 0.3 , 0.35); }
+			H2S_cali_ppm = ambient_limit(AMBIENT_H2S, H2S_cali_ppm, 0.002, 0.008);
+			 O3_cali_ppm = ambient_limit(AMBIENT_O3,   O3_cali_ppm,  0.002, 0.005);
+			 CO_cali_ppm = ambient_limit(AMBIENT_CO,   CO_cali_ppm,  0.2,   0.9);
+			NO2_cali_ppm = ambient_limit(AMBIENT_NO2, NO2_cali_ppm, 0.010, 0.020);
+			NH3_cali_ppm = ambient_limit(AMBIENT_NH3, NH3_cali_ppm, 0.02,  0.04);
 
 			ESP_LOGW("sss", "-------- some Changed : Min 0.001 --------------------");
 			ESP_LOGW("sss", "H2S_cali_ppm=%.3f",H2S_cali_ppm);
@@ -897,13 +893,13 @@ void spi2_adc_task(void *arg)
 			char temp[128];
 		   	root = cJSON_CreateObject();
 	    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", H2S_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.4f", H2S_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_H2S_val",   temp   );
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", O3_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.4f", O3_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_O3_val",   temp   );
 			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", CO_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_CO_val",   temp   );
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", NO2_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.4f", NO2_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NO2_val",   temp   );
 			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", NH3_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NH3_val",   temp   );
