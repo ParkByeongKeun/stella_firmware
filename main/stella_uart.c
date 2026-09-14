@@ -400,13 +400,13 @@ int send_ZE08_data( struct _ZE08_CH2O_data *data )
 		ESP_LOGI("ZE08 ug/m^3 ", "%d (ug/m^3(ZE08_CH2O)", htons(data->ug_per_m3) );
 		ESP_LOGI("ZE08 ppb    ", "%d (ppb)", htons(data->ppb) );
 
-		double ch2o_ppb_raw = (double)htons(data->ppb);
 		double ch2o_ug_raw = (double)htons(data->ug_per_m3);
-		if (ch2o_ug_raw > 41.0 && ch2o_ppb_raw <= 33.0) {
-			ch2o_ppb_raw = ch2o_ug_raw * 16.0 / 20.0;
+		double ch2o_ppb_raw = (double)htons(data->ppb);
+		if (ch2o_ug_raw <= 0.0 && ch2o_ppb_raw > 0.0) {
+			ch2o_ug_raw = ch2o_ppb_raw * 20.0 / 16.0;
 		}
-		double ch2o_ppb = ambient_limit(AMBIENT_CH2O_PPB, ch2o_ppb_raw, 16.0, 33.0);
-		double ch2o_ug = ch2o_ppb * 20.0 / 16.0;
+		double ch2o_ug = ambient_limit(AMBIENT_CH2O, ch2o_ug_raw, 20.0, 41.0);
+		double ch2o_ppb = ch2o_ug * 16.0 / 20.0;
 
 	    ESP_LOGI("ZE08_CH2O..", "Serialize.....ZE08");
 	    cJSON *root;

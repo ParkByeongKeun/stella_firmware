@@ -869,17 +869,27 @@ void spi2_adc_task(void *arg)
 
 
 
-			H2S_cali_ppm = ambient_limit(AMBIENT_H2S, H2S_cali_ppm, 0.002, 0.008);
-			 O3_cali_ppm = ambient_limit(AMBIENT_O3,   O3_cali_ppm,  0.002, 0.005);
-			 CO_cali_ppm = ambient_limit(AMBIENT_CO,   CO_cali_ppm,  0.2,   0.9);
-			NO2_cali_ppm = ambient_limit(AMBIENT_NO2, NO2_cali_ppm, 0.010, 0.020);
-			NH3_cali_ppm = ambient_limit(AMBIENT_NH3, NH3_cali_ppm, 0.02,  0.04);
+			double h2s_raw = H2S_cali_ppm;
+			double o3_raw = O3_cali_ppm;
+			double co_raw = CO_cali_ppm;
+			double no2_raw = NO2_cali_ppm;
+			double nh3_raw = NH3_cali_ppm;
 
-			ESP_LOGW("sss", "-------- some Changed : Min 0.001 --------------------");
-			ESP_LOGW("sss", "H2S_cali_ppm=%.3f",H2S_cali_ppm);
-			ESP_LOGW("sss", " O3_cali_ppm=%.3f", O3_cali_ppm);
+			H2S_cali_ppm = ambient_limit(AMBIENT_H2S, h2s_raw, 0.002, 0.010);
+			 O3_cali_ppm = ambient_limit(AMBIENT_O3,   o3_raw,  0.020, 0.060);
+			 CO_cali_ppm = ambient_limit(AMBIENT_CO,   co_raw,  0.2,   1.0);
+			NO2_cali_ppm = ambient_limit(AMBIENT_NO2, no2_raw, 0.010, 0.030);
+			NH3_cali_ppm = ambient_limit(AMBIENT_NH3, nh3_raw, 0.02,  0.10);
+			double sm_raw = (h2s_raw > 0.0 ? h2s_raw : 0.0) * 20.0 + (nh3_raw > 0.0 ? nh3_raw : 0.0);
+			double sm_ppm = ambient_limit(AMBIENT_SM, sm_raw, 0.04, 0.08);
+
+			ESP_LOGW("sss", "-------- ambient mapped --------------------");
+			ESP_LOGW("sss", "H2S_cali_ppm=%.4f",H2S_cali_ppm);
+			ESP_LOGW("sss", " O3_cali_ppm=%.4f", O3_cali_ppm);
 			ESP_LOGW("sss", " CO_cali_ppm=%.3f", CO_cali_ppm);
-			ESP_LOGW("sss", "NO2_cali_ppm=%.3f",NO2_cali_ppm);
+			ESP_LOGW("sss", "NO2_cali_ppm=%.4f",NO2_cali_ppm);
+			ESP_LOGW("sss", "NH3_cali_ppm=%.3f",NH3_cali_ppm);
+			ESP_LOGW("sss", " SM_ppm=%.3f", sm_ppm);
 
 
 			ble_send_noti_float("H2S", H2S_cali_ppm);
@@ -887,6 +897,7 @@ void spi2_adc_task(void *arg)
 			ble_send_noti_float("CO",   CO_cali_ppm);
 			ble_send_noti_float("NO2", NO2_cali_ppm);
 			ble_send_noti_float("NH3", NH3_cali_ppm);
+			ble_send_noti_float("SM",   (float)sm_ppm);
 
 		    ESP_LOGI(JSON_TAG, "Serialize.....ADC_Result");
 		    cJSON *root;
@@ -903,6 +914,8 @@ void spi2_adc_task(void *arg)
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NO2_val",   temp   );
 			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", NH3_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NH3_val",   temp   );
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", sm_ppm);
+			cJSON_AddStringToObject(root, "SM", temp);
 
 		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_H2S_val",      adc_val[0]);
 		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_O3_val",       adc_val[1]);

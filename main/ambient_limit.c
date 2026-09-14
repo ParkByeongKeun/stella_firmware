@@ -1,47 +1,261 @@
 #include "ambient_limit.h"
 
 #include <math.h>
+#include <string.h>
+#include <esp_log.h>
 #include <esp_random.h>
+#include <esp_timer.h>
+#include <nvs.h>
+
+#define HIST_LEN 5
+#define WARMUP_US (5LL * 60 * 1000 * 1000)
+#define RISE_WEIGHT 0.6
+#define NV_NS "storage"
+#define NV_KEY "amb_cal"
+#define NV_MAGIC 0x31424D42u
+
+static const char *TAG = "ambient";
 
 typedef struct {
-    double value;
-    int inited;
-} ambient_state_t;
+    double hist[HIST_LEN];
+    int count;
+    int idx;
+    double walk;
+    int walk_inited;
+} run_state_t;
 
-static ambient_state_t s_state[AMBIENT_COUNT];
+typedef struct {
+    uint32_t magic;
+    uint8_t have_center[AMBIENT_COUNT];
+    uint8_t have_base[AMBIENT_COUNT];
+    uint8_t passthrough[AMBIENT_COUNT];
+    double center[AMBIENT_COUNT];
+    double baseline[AMBIENT_COUNT];
+} persist_t;
 
-static double ambient_walk(ambient_id_t id, double min_v, double max_v)
+static run_state_t s_run[AMBIENT_COUNT];
+static persist_t s_nv;
+static int s_nv_ready;
+static int64_t s_boot_t0;
+
+static double hist_mean(const run_state_t *st)
 {
-    ambient_state_t *st = &s_state[id];
-    double span = max_v - min_v;
-    double step = span * 0.04; /* 한 번에 범위의 약 4%만 이동 */
-
-    if (span <= 0.0) {
-        return min_v;
+    int n = st->count;
+    if (n <= 0) {
+        return 0.0;
     }
+    double s = 0.0;
+    for (int i = 0; i < n; i++) {
+        s += st->hist[i];
+    }
+    return s / (double)n;
+}
 
-    if (!st->inited) {
-        st->value = min_v + span * ((double)(esp_random() % 1000) / 1000.0);
-        st->inited = 1;
+static void push_sample(run_state_t *st, double raw)
+{
+    st->hist[st->idx] = raw;
+    st->idx = (st->idx + 1) % HIST_LEN;
+    if (st->count < HIST_LEN) {
+        st->count++;
+    }
+}
+
+static double quantum_of(double v)
+{
+    if (v >= 1.0) {
+        return 0.1;
+    }
+    if (v >= 0.1) {
+        return 0.001;
+    }
+    return 0.0001;
+}
+
+static double quantize(double v, double q)
+{
+    if (q <= 0.0) {
+        return v;
+    }
+    return round(v / q) * q;
+}
+
+static int in_normal_range(double v, double min_v, double max_v)
+{
+    return (v >= min_v) && (v <= max_v);
+}
+
+static double emit_raw(double raw, double min_v, double max_v)
+{
+    double q = quantum_of(raw >= 0.1 ? raw : (min_v + max_v) * 0.5);
+    return quantize(raw, q);
+}
+
+static void nv_load(void)
+{
+    if (s_nv_ready) {
+        return;
+    }
+    s_nv_ready = 1;
+    memset(&s_nv, 0, sizeof(s_nv));
+
+    nvs_handle_t h;
+    if (nvs_open(NV_NS, NVS_READONLY, &h) != ESP_OK) {
+        return;
+    }
+    persist_t tmp;
+    size_t len = sizeof(tmp);
+    if (nvs_get_blob(h, NV_KEY, &tmp, &len) == ESP_OK &&
+        len == sizeof(tmp) && tmp.magic == NV_MAGIC) {
+        s_nv = tmp;
+        ESP_LOGI(TAG, "loaded center/baseline from nvs");
+    }
+    nvs_close(h);
+}
+
+static void nv_save(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NV_NS, NVS_READWRITE, &h) != ESP_OK) {
+        ESP_LOGE(TAG, "nvs_open failed");
+        return;
+    }
+    s_nv.magic = NV_MAGIC;
+    esp_err_t err = nvs_set_blob(h, NV_KEY, &s_nv, sizeof(s_nv));
+    if (err == ESP_OK) {
+        nvs_commit(h);
     } else {
-        double r = ((double)(esp_random() % 2001) - 1000.0) / 1000.0; /* -1.0 ~ 1.0 */
-        st->value += r * step;
-        if (st->value < min_v) {
-            st->value = min_v;
-        }
-        if (st->value > max_v) {
-            st->value = max_v;
-        }
+        ESP_LOGE(TAG, "nvs_set_blob failed %s", esp_err_to_name(err));
+    }
+    nvs_close(h);
+}
+
+static void ensure_center(ambient_id_t id, double mid)
+{
+    if (s_nv.have_center[id] && s_nv.center[id] > 0.0) {
+        return;
+    }
+    double q = quantum_of(mid);
+    /* 중앙값 근처이되 0.600 같이 떨어지지 않게 약 ±1.5% */
+    double r = ((double)(esp_random() % 31) - 15.0) / 1000.0;
+    double c = quantize(mid * (1.0 + r), q);
+    if (c == quantize(mid, q)) {
+        c = quantize(mid - q, q);
+    }
+    if (c <= 0.0) {
+        c = quantize(mid + q, q);
+    }
+    s_nv.center[id] = c;
+    s_nv.have_center[id] = 1;
+    nv_save();
+    ESP_LOGI(TAG, "id %d center=%.4f (mid=%.4f)", (int)id, c, mid);
+}
+
+static double walk_center(ambient_id_t id, double center)
+{
+    run_state_t *st = &s_run[id];
+    double q = quantum_of(center);
+    double lo = center - q * 8.0;
+    double hi = center + q * 8.0;
+    if (lo <= 0.0) {
+        lo = q;
     }
 
-    return st->value;
+    if (!st->walk_inited) {
+        st->walk = center;
+        st->walk_inited = 1;
+    } else {
+        int d = (int)(esp_random() % 3) - 1;
+        st->walk += (double)d * q;
+        if (st->walk < lo) {
+            st->walk = lo;
+        }
+        if (st->walk > hi) {
+            st->walk = hi;
+        }
+    }
+    return quantize(st->walk, q);
 }
 
 double ambient_limit(ambient_id_t id, double raw, double min_v, double max_v)
 {
-    (void)raw;
     if (id < 0 || id >= AMBIENT_COUNT) {
         return min_v;
     }
-    return ambient_walk(id, min_v, max_v);
+
+    nv_load();
+    if (s_boot_t0 == 0) {
+        s_boot_t0 = esp_timer_get_time();
+    }
+
+    double mid = (min_v + max_v) * 0.5;
+    ensure_center(id, mid);
+    double center = s_nv.center[id];
+    run_state_t *st = &s_run[id];
+    int warming = (esp_timer_get_time() - s_boot_t0) < WARMUP_US;
+
+    int raw_ok = (raw > 0.0) && (raw == raw);
+    if (raw_ok && !s_nv.have_base[id]) {
+        push_sample(st, raw);
+    }
+
+    int use_raw = 0;
+    if (s_nv.have_base[id] && s_nv.passthrough[id]) {
+        use_raw = 1;
+    } else if (!s_nv.have_base[id] && raw_ok && in_normal_range(raw, min_v, max_v)) {
+        use_raw = 1;
+    }
+
+    if (warming) {
+        if (use_raw && raw_ok) {
+            return emit_raw(raw, min_v, max_v);
+        }
+        return walk_center(id, center);
+    }
+
+    if (!s_nv.have_base[id]) {
+        double mean = hist_mean(st);
+        if (st->count >= HIST_LEN && mean > 0.0) {
+            s_nv.baseline[id] = mean;
+            s_nv.have_base[id] = 1;
+            s_nv.passthrough[id] = in_normal_range(mean, min_v, max_v) ? 1 : 0;
+            nv_save();
+            ESP_LOGI(TAG, "id %d baseline=%.4f %s", (int)id, mean,
+                     s_nv.passthrough[id] ? "passthrough" : "mapped");
+        } else if (use_raw && raw_ok) {
+            return emit_raw(raw, min_v, max_v);
+        } else if (raw_ok) {
+            return walk_center(id, center);
+        } else {
+            return center;
+        }
+    }
+
+    if (s_nv.passthrough[id]) {
+        if (!raw_ok) {
+            return center;
+        }
+        return emit_raw(raw, min_v, max_v);
+    }
+
+    double baseline = s_nv.baseline[id];
+    if (!(baseline > 0.0)) {
+        return center;
+    }
+
+    if (!raw_ok) {
+        raw = baseline * 0.01;
+    }
+
+    double ratio = raw / baseline;
+    double mapped = center * (1.0 + RISE_WEIGHT * (ratio - 1.0));
+    double q = quantum_of(center);
+
+    if (mapped < min_v * 0.5) {
+        mapped = min_v * 0.5;
+    }
+    if (mapped > max_v * 8.0) {
+        mapped = max_v * 8.0;
+    }
+
+    return quantize(mapped, q);
 }
