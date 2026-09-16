@@ -112,7 +112,6 @@ extern char my_mac_str[32];
 extern int flag_IS_WEARABLE ;
 extern int fd_uart2 ;
 extern int send_to_server(char *payload, int len);
-extern int ble_send_noti_float(char *id, float value);
 extern int ble_send_noti_str(char *id, char* value);
 extern bool notify_state;
 
@@ -251,12 +250,8 @@ void task_send_JSON (void* arg)
 
 		memset(pdm_db_str, 0, sizeof(pdm_db_str));
 		sprintf(pdm_db_str,"%.1f", 20*log10(pdm_msg.avg));
-		{
-			float pdm_db = (pdm_msg.avg > 0) ? (float)(20.0 * log10((double)pdm_msg.avg)) : 0.0f;
-			ESP_LOGW("SOUND", "db=%.1f notify_state=%d (0이면 BLE로 안 나감)", pdm_db, (int)notify_state);
-			ble_send_noti_float("SOUND", pdm_db);
-			ble_send_noti_str("PDM_Avg", pdm_db_str);
-		}
+		ESP_LOGW("SOUND", "db=%s notify_state=%d", pdm_db_str, (int)notify_state);
+		ble_send_noti_str("PDM_avg", pdm_db_str);
 
 		{
 		    ESP_LOGI(JSON_TAG, "Serialize.....PDM_Result");
@@ -271,7 +266,6 @@ void task_send_JSON (void* arg)
 		   	cJSON_AddNumberToObject(root, "PDM_Avg(raw)",               pdm_msg.avg  );
 
 		   	cJSON_AddStringToObject(root, "PDM_Avg",               pdm_db_str);
-		   	cJSON_AddNumberToObject(root, "SOUND",                 atof(pdm_db_str));
 //  		   	cJSON_AddNumberToObject(root, "PDM_Avg",               20*log10(pdm_msg.avg)  );
 
 		   	cJSON_AddNumberToObject(root, "PDM_Peak",              pdm_msg.peak );
