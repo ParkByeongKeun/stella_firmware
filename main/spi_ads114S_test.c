@@ -41,6 +41,24 @@ extern esp_err_t ijoon_get_nvs_str(uint8_t *key, uint8_t *value);
 
 static const char *JSON_TAG = "JSON";
 
+static int nvs_positive(const uint8_t *s, double *out)
+{
+	char *end = NULL;
+	double v;
+	if (s == NULL || s[0] == 0) {
+		return 0;
+	}
+	v = strtod((const char *)s, &end);
+	if (end == (char *)s || end == NULL || *end != '\0') {
+		return 0;
+	}
+	if (!(v > 0.0)) {
+		return 0;
+	}
+	*out = v;
+	return 1;
+}
+
 double Sensitivity_H2S = 214.13;
 double Sensitivity_O3 =   60.66;
 double Sensitivity_CO =    4.42;
@@ -764,6 +782,12 @@ void spi2_adc_task(void *arg)
 			uint8_t S_O3[10];
 			uint8_t S_CO[10];
 			uint8_t S_NO2[10];
+			double nvs_num;
+
+			memset(S_H2S, 0, sizeof(S_H2S));
+			memset(S_O3, 0, sizeof(S_O3));
+			memset(S_CO, 0, sizeof(S_CO));
+			memset(S_NO2, 0, sizeof(S_NO2));
 
 			//---------------------------------------------------------------
 			ijoon_get_nvs_str((uint8_t*)"S_H2S", S_H2S);
@@ -771,10 +795,10 @@ void spi2_adc_task(void *arg)
 			ijoon_get_nvs_str((uint8_t*)"S_CO" , S_CO );
 			ijoon_get_nvs_str((uint8_t*)"S_NO2", S_NO2);
 
-			if( S_H2S[0] != 0 ) { Sensitivity_H2S = atof((char*)S_H2S); }
-			if( S_O3 [0] != 0 ) { Sensitivity_O3  = atof((char*)S_O3 ); }
-			if( S_CO [0] != 0 ) { Sensitivity_CO  = atof((char*)S_CO ); }
-			if( S_NO2[0] != 0 ) { Sensitivity_NO2 = atof((char*)S_NO2); }
+			if (nvs_positive(S_H2S, &nvs_num)) { Sensitivity_H2S = nvs_num; }
+			if (nvs_positive(S_O3,  &nvs_num)) { Sensitivity_O3  = nvs_num; }
+			if (nvs_positive(S_CO,  &nvs_num)) { Sensitivity_CO  = nvs_num; }
+			if (nvs_positive(S_NO2, &nvs_num)) { Sensitivity_NO2 = nvs_num; }
 
 			ESP_LOGW("sss", "S_H2S=%s, %.3f, %.2f", S_H2S, atof((char*)S_H2S), Sensitivity_H2S);
 			ESP_LOGW("sss", "S_O3 =%s, %.3f, %.2f", S_O3,  atof((char*)S_O3 ), Sensitivity_O3 );
@@ -783,15 +807,19 @@ void spi2_adc_task(void *arg)
 			//---------------------------------------------------------------
 
 			//---------------------------------------------------------------
+			memset(S_H2S, 0, sizeof(S_H2S));
+			memset(S_O3, 0, sizeof(S_O3));
+			memset(S_CO, 0, sizeof(S_CO));
+			memset(S_NO2, 0, sizeof(S_NO2));
 			ijoon_get_nvs_str((uint8_t*)"VGAS0_H2S", S_H2S);
 			ijoon_get_nvs_str((uint8_t*)"VGAS0_O3" ,S_O3 );
 			ijoon_get_nvs_str((uint8_t*)"VGAS0_CO" ,S_CO );
 			ijoon_get_nvs_str((uint8_t*)"VGAS0_NO2", S_NO2);
 
-			if( S_H2S[0] != 0 ) { Vgas0_H2S = (2.5*atof((char*)S_H2S))/(1<<16) ; }
-			if( S_O3 [0] != 0 ) { Vgas0_O3  = (2.5*atof((char*)S_O3 ))/(1<<16) ; }
-			if( S_CO [0] != 0 ) { Vgas0_CO  = (2.5*atof((char*)S_CO ))/(1<<16)  ; }
-			if( S_NO2[0] != 0 ) { Vgas0_NO2 = (2.5*atof((char*)S_NO2))/(1<<16) ; }
+			if (nvs_positive(S_H2S, &nvs_num)) { Vgas0_H2S = (2.5 * nvs_num) / (1<<16); }
+			if (nvs_positive(S_O3,  &nvs_num)) { Vgas0_O3  = (2.5 * nvs_num) / (1<<16); }
+			if (nvs_positive(S_CO,  &nvs_num)) { Vgas0_CO  = (2.5 * nvs_num) / (1<<16); }
+			if (nvs_positive(S_NO2, &nvs_num)) { Vgas0_NO2 = (2.5 * nvs_num) / (1<<16); }
 
 
 			ESP_LOGW("sss", "VGAS0_H2S=%s, %.6f, %.6f", S_H2S, atof((char*)S_H2S), Vgas0_H2S);
@@ -852,9 +880,9 @@ void spi2_adc_task(void *arg)
 //  			 CO_cali_ppm = (1/M_CO)*(CO_cali_volt-Vgas0_CO);
 //  			NO2_cali_ppm = (1/M_NO2)*(NO2_cali_volt-Vgas0_NO2);
 			H2S_cali_ppm = (H2S_cali_volt-Vgas0_H2S)/M_H2S;
-			 O3_cali_ppm = ( O3_cali_volt-Vgas0_O3 )/M_O3;
-			 CO_cali_ppm = ( CO_cali_volt-Vgas0_CO )/M_CO;
-			NO2_cali_ppm = (NO2_cali_volt-Vgas0_NO2)/M_NO2;
+			 O3_cali_ppm = (M_O3  > 0.0) ? ( O3_cali_volt-Vgas0_O3 )/M_O3  : 0.0;
+			 CO_cali_ppm = (M_CO  > 0.0) ? ( CO_cali_volt-Vgas0_CO )/M_CO  : 0.0;
+			NO2_cali_ppm = (M_NO2 > 0.0) ? (NO2_cali_volt-Vgas0_NO2)/M_NO2 : 0.0;
 
 
 			ESP_LOGE("shcho", "O3/NO2는 높게 나와서 /100.0을 함");
@@ -875,21 +903,18 @@ void spi2_adc_task(void *arg)
 			double no2_raw = NO2_cali_ppm;
 			double nh3_raw = NH3_cali_ppm;
 
-			H2S_cali_ppm = ambient_limit(AMBIENT_H2S, h2s_raw, 0.002, 0.010);
+			H2S_cali_ppm = ambient_limit(AMBIENT_H2S, h2s_raw, 0.00011, 0.001);
 			 O3_cali_ppm = ambient_limit(AMBIENT_O3,   o3_raw,  0.020, 0.060);
 			 CO_cali_ppm = ambient_limit(AMBIENT_CO,   co_raw,  0.2,   1.0);
 			NO2_cali_ppm = ambient_limit(AMBIENT_NO2, no2_raw, 0.010, 0.030);
 			NH3_cali_ppm = ambient_limit(AMBIENT_NH3, nh3_raw, 0.02,  0.10);
-			double sm_raw = (h2s_raw > 0.0 ? h2s_raw : 0.0) * 20.0 + (nh3_raw > 0.0 ? nh3_raw : 0.0);
-			double sm_ppm = ambient_limit(AMBIENT_SM, sm_raw, 0.04, 0.08);
 
 			ESP_LOGW("sss", "-------- ambient mapped --------------------");
-			ESP_LOGW("sss", "H2S_cali_ppm=%.4f",H2S_cali_ppm);
+			ESP_LOGW("sss", "H2S_cali_ppm=%.5f",H2S_cali_ppm);
 			ESP_LOGW("sss", " O3_cali_ppm=%.4f", O3_cali_ppm);
 			ESP_LOGW("sss", " CO_cali_ppm=%.3f", CO_cali_ppm);
 			ESP_LOGW("sss", "NO2_cali_ppm=%.4f",NO2_cali_ppm);
 			ESP_LOGW("sss", "NH3_cali_ppm=%.3f",NH3_cali_ppm);
-			ESP_LOGW("sss", " SM_ppm=%.3f", sm_ppm);
 
 
 			ble_send_noti_float("H2S", H2S_cali_ppm);
@@ -897,14 +922,13 @@ void spi2_adc_task(void *arg)
 			ble_send_noti_float("CO",   CO_cali_ppm);
 			ble_send_noti_float("NO2", NO2_cali_ppm);
 			ble_send_noti_float("NH3", NH3_cali_ppm);
-			ble_send_noti_float("SM",   (float)sm_ppm);
 
 		    ESP_LOGI(JSON_TAG, "Serialize.....ADC_Result");
 		    cJSON *root;
 			char temp[128];
 		   	root = cJSON_CreateObject();
 	    	cJSON_AddStringToObject(root, "Board_Serial_Num",my_mac_str);
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.4f", H2S_cali_ppm);
+			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.5f", H2S_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_H2S_val",   temp   );
 			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.4f", O3_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_O3_val",   temp   );
@@ -914,8 +938,6 @@ void spi2_adc_task(void *arg)
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NO2_val",   temp   );
 			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", NH3_cali_ppm);
 		   	cJSON_AddStringToObject(root, "ADC_HW_v1(2.5V_ref)_NH3_val",   temp   );
-			memset(temp, 0, sizeof(temp)); sprintf(temp, "%.3f", sm_ppm);
-			cJSON_AddStringToObject(root, "SM", temp);
 
 		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_H2S_val",      adc_val[0]);
 		   	cJSON_AddNumberToObject(root, "val_ADC_HW_v1(2.5V_ref)_O3_val",       adc_val[1]);

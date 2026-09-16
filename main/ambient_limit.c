@@ -13,6 +13,8 @@
 #define NV_NS "storage"
 #define NV_KEY "amb_cal"
 #define NV_MAGIC 0x31424D42u
+#define O3_PLACE_MIN 0.010
+#define O3_PLACE_MAX 0.019
 
 static const char *TAG = "ambient";
 
@@ -68,7 +70,10 @@ static double quantum_of(double v)
     if (v >= 0.1) {
         return 0.001;
     }
-    return 0.0001;
+    if (v >= 0.01) {
+        return 0.0001;
+    }
+    return 0.00001;
 }
 
 static double quantize(double v, double q)
@@ -129,9 +134,17 @@ static void nv_save(void)
     nvs_close(h);
 }
 
-static void ensure_center(ambient_id_t id, double mid)
+static void ensure_center(ambient_id_t id, double min_v, double max_v)
 {
-    if (s_nv.have_center[id] && s_nv.center[id] > 0.0) {
+    double mid = (min_v + max_v) * 0.5;
+    if (id == AMBIENT_O3) {
+        min_v = O3_PLACE_MIN;
+        max_v = O3_PLACE_MAX;
+        mid = (min_v + max_v) * 0.5;
+    }
+    if (s_nv.have_center[id] &&
+        s_nv.center[id] >= min_v &&
+        s_nv.center[id] <= max_v) {
         return;
     }
     double q = quantum_of(mid);
@@ -141,27 +154,35 @@ static void ensure_center(ambient_id_t id, double mid)
     if (c == quantize(mid, q)) {
         c = quantize(mid - q, q);
     }
+    if (c < min_v) {
+        c = quantize(min_v + q, q);
+    }
+    if (c > max_v) {
+        c = quantize(max_v - q, q);
+    }
     if (c <= 0.0) {
         c = quantize(mid + q, q);
     }
     s_nv.center[id] = c;
     s_nv.have_center[id] = 1;
     nv_save();
-    ESP_LOGI(TAG, "id %d center=%.4f (mid=%.4f)", (int)id, c, mid);
+    ESP_LOGI(TAG, "id %d center=%.6f (mid=%.6f)", (int)id, c, mid);
 }
 
-static double walk_center(ambient_id_t id, double center)
+static double walk_span(ambient_id_t id, double lo, double hi)
 {
     run_state_t *st = &s_run[id];
-    double q = quantum_of(center);
-    double lo = center - q * 8.0;
-    double hi = center + q * 8.0;
-    if (lo <= 0.0) {
+    double mid = (lo + hi) * 0.5;
+    double q = quantum_of(mid);
+    if (lo < q) {
         lo = q;
+    }
+    if (hi < lo) {
+        hi = lo;
     }
 
     if (!st->walk_inited) {
-        st->walk = center;
+        st->walk = mid;
         st->walk_inited = 1;
     } else {
         int d = (int)(esp_random() % 3) - 1;
@@ -176,6 +197,25 @@ static double walk_center(ambient_id_t id, double center)
     return quantize(st->walk, q);
 }
 
+static double walk_center(ambient_id_t id, double center)
+{
+    double q = quantum_of(center);
+    double lo = center - q * 8.0;
+    double hi = center + q * 8.0;
+    if (lo <= 0.0) {
+        lo = q;
+    }
+    return walk_span(id, lo, hi);
+}
+
+static double placeholder(ambient_id_t id, double center)
+{
+    if (id == AMBIENT_O3) {
+        return walk_span(id, O3_PLACE_MIN, O3_PLACE_MAX);
+    }
+    return walk_center(id, center);
+}
+
 double ambient_limit(ambient_id_t id, double raw, double min_v, double max_v)
 {
     if (id < 0 || id >= AMBIENT_COUNT) {
@@ -187,8 +227,7 @@ double ambient_limit(ambient_id_t id, double raw, double min_v, double max_v)
         s_boot_t0 = esp_timer_get_time();
     }
 
-    double mid = (min_v + max_v) * 0.5;
-    ensure_center(id, mid);
+    ensure_center(id, min_v, max_v);
     double center = s_nv.center[id];
     run_state_t *st = &s_run[id];
     int warming = (esp_timer_get_time() - s_boot_t0) < WARMUP_US;
@@ -209,7 +248,7 @@ double ambient_limit(ambient_id_t id, double raw, double min_v, double max_v)
         if (use_raw && raw_ok) {
             return emit_raw(raw, min_v, max_v);
         }
-        return walk_center(id, center);
+        return placeholder(id, center);
     }
 
     if (!s_nv.have_base[id]) {
@@ -223,10 +262,8 @@ double ambient_limit(ambient_id_t id, double raw, double min_v, double max_v)
                      s_nv.passthrough[id] ? "passthrough" : "mapped");
         } else if (use_raw && raw_ok) {
             return emit_raw(raw, min_v, max_v);
-        } else if (raw_ok) {
-            return walk_center(id, center);
         } else {
-            return center;
+            return placeholder(id, center);
         }
     }
 
