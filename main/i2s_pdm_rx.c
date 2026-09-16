@@ -112,6 +112,7 @@ extern char my_mac_str[32];
 extern int flag_IS_WEARABLE ;
 extern int fd_uart2 ;
 extern int send_to_server(char *payload, int len);
+extern int ble_send_noti_str(char *id, char* value);
 
 //shcho from src_nimble_src/led.c
 extern void led_on(void) ;
@@ -248,6 +249,7 @@ void task_send_JSON (void* arg)
 
 		memset(pdm_db_str, 0, sizeof(pdm_db_str));
 		sprintf(pdm_db_str,"%.1f", 20*log10(pdm_msg.avg));
+		ble_send_noti_str("SOUND", pdm_db_str);
 
 		{
 		    ESP_LOGI(JSON_TAG, "Serialize.....PDM_Result");

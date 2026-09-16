@@ -3649,17 +3649,11 @@ void app_main(void)
 		// -------------------------------------------------------------
        	vTaskDelay(2000 / portTICK_PERIOD_MS);
 
-		app_main_nimble_sec(); // Static / Wearable모두에서 실행
+		app_main_nimble_sec();
 	}
 	else
 	{
-		//--------------------------------------------------------------
-		//
-		passkey_msg_handle = xMessageBufferCreate( passkey_msg_bytes );
-		assert(passkey_msg_handle);
-	    vTaskDelay(1000 / portTICK_PERIOD_MS);
-	
-		app_main_nimble_sec();
+		ESP_LOGW("shcho", "Static/CM4: BLE advertising off");
 	}
 
 	if( flag_IS_WEARABLE == 0 ) //Static Main
